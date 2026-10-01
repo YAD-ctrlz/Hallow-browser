@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Launch a Gecko browser under Xvfb with a fresh profile and capture the whole
-# screen in light and dark mode.
+# screen: the new tab page in light and dark mode, and a web page.
 #
 #   tools/screenshot.sh <browser-binary> <output-dir>
 #
@@ -19,10 +19,10 @@ trap 'kill "$xvfb" 2>/dev/null || true' EXIT
 sleep 2
 
 shoot() {
-  local name=$1 theme=$2 profile pid
+  local name=$1 theme=$2 url=$3 profile pid
   profile=$(mktemp -d)
   GTK_THEME=$theme "$browser" --new-instance --profile "$profile" \
-    https://example.com about:newtab >"$out/$name.log" 2>&1 &
+    "$url" >"$out/$name.log" 2>&1 &
   pid=$!
   sleep 30
   import -window root "$out/$name.png"
@@ -32,5 +32,6 @@ shoot() {
   echo "captured $out/$name.png"
 }
 
-shoot light Adwaita
-shoot dark Adwaita:dark
+shoot newtab-light Adwaita about:newtab
+shoot newtab-dark Adwaita:dark about:newtab
+shoot page-light Adwaita https://example.com
