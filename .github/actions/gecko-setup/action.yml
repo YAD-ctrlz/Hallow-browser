@@ -1,0 +1,55 @@
+name: Gecko build setup
+description: >
+  Free disk space, add swap, install Mozilla's Rust release and leave a
+  fetched, patched and branded Firefox source tree for building Hallow.
+  Sets HALLOW_WORK_DIR, MOZBUILD_STATE_PATH and SCCACHE_DIR.
+
+runs:
+  using: composite
+  steps:
+    - name: Make room (disk and swap)
+      shell: bash
+      run: |
+        df -h
+        # Preinstalled SDKs a Gecko build never uses.
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+          /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+        # Build on whichever disk has the most free space.
+        base=/mnt/hallow
+        if [ ! -d /mnt ] || [ "$(df --output=avail -k / | tail -1)" -gt "$(df --output=avail -k /mnt | tail -1)" ]; then
+          base=/hallow
+        fi
+        sudo mkdir -p "$base" && sudo chown "$USER" "$base"
+        # Linking libxul with cross-language LTO needs more than 16 GB.
+        sudo fallocate -l 16G "$base.swap" && sudo chmod 600 "$base.swap"
+        sudo mkswap "$base.swap" && sudo swapon "$base.swap"
+        {
+          echo "HALLOW_WORK_DIR=$base/work"
+          echo "MOZBUILD_STATE_PATH=$base/mozbuild"
+          echo "SCCACHE_DIR=$base/sccache"
+        } >> "$GITHUB_ENV"
+        df -h; free -h
+
+    - name: Install Rust ${{ env.GECKO_RUST }} and Python venv support
+      shell: bash
+      run: |
+        sudo apt-get update -q && sudo apt-get install -y -q python3-venv
+        rustup toolchain install "$GECKO_RUST" --profile minimal --target wasm32-wasip1
+        rustup default "$GECKO_RUST"
+        rustc --version
+
+    - uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: tool-gecko-rust-${{ env.GECKO_RUST }}-${{ hashFiles('Cargo.lock') }}
+
+    - name: Fetch Firefox source
+      shell: bash
+      run: cargo hb fetch
+
+    - name: Apply Hallow patches, branding and prefs
+      shell: bash
+      run: cargo hb prepare

@@ -1,0 +1,20 @@
+diff --git a/widget/gtk/nsLookAndFeel.cpp b/widget/gtk/nsLookAndFeel.cpp
+index cfa9708a..46b4cbd7 100644
+--- a/widget/gtk/nsLookAndFeel.cpp
++++ b/widget/gtk/nsLookAndFeel.cpp
+@@ -1337,6 +1337,15 @@ bool nsLookAndFeel::PerThemeData::GetFont(FontID aID, nsString& aFontName,
+   }
+   aFontStyle.systemFont = true;
+ 
++  // Hallow: the interface font is IBM Plex Sans (bundled in <app>/fonts), at
++  // the size and weight the desktop asks for. Form-control fonts (fields,
++  // lists, buttons) stay native so web pages render as they do in Firefox.
++  // The ui.font.* prefs can still pick a different font.
++  if (aID != FontID::MozField && aID != FontID::MozList &&
++      aID != FontID::MozButton) {
++    aFontName.AssignLiteral(u"IBM Plex Sans");
++  }
++
+   // Convert GDK pixels to CSS pixels.
+   // Note that this is generally a no-op, except when text scale factor is
+   // overridden by pref.

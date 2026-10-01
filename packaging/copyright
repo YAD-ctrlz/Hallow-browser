@@ -11,6 +11,16 @@ Comment:
  trademark of the Mozilla Foundation; Hallow is not affiliated with Mozilla.
  Third-party code bundled with Firefox is listed in about:license.
 
+Files: usr/lib/hallow/fonts/IBMPlexSans-*.ttf
+Copyright: 2017 IBM Corp. with Reserved Font Name "Plex"
+License: OFL-1.1
+Comment: Full text in /usr/share/doc/hallow/fonts/OFL-IBMPlexSans.txt
+
+Files: usr/lib/hallow/fonts/SpaceGrotesk-*.ttf
+Copyright: 2020 The Space Grotesk Project Authors
+License: OFL-1.1
+Comment: Full text in /usr/share/doc/hallow/fonts/OFL-SpaceGrotesk.txt
+
 License: MPL-2.0
  This Source Code Form is subject to the terms of the Mozilla Public
  License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -18,3 +28,6 @@ License: MPL-2.0
  .
  On Debian systems, the full text of the Mozilla Public License 2.0 can
  be found in /usr/share/common-licenses/MPL-2.0.
+
+License: OFL-1.1
+ SIL Open Font License, Version 1.1. See the files referenced above.

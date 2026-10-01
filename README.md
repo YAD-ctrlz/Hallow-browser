@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="branding/logo.svg" width="96" alt="Hallow logo">
+  <img src="branding/logo.png" width="128" alt="Hallow logo: a pixel-art globe with a halo">
 </p>
 
 # Hallow
@@ -14,6 +14,14 @@ release. It ships as a `.deb` on the
 - **Clean UI.** Compact toolbars, a full-width address bar and no Firefox View,
   account or bookmarks-bar clutter. The new tab page has no sponsored tiles,
   stories or weather. No onboarding tours, promos or "what's new" pages.
+- **Fast.** Compiled the way Mozilla compiles Firefox releases: profile-guided
+  optimization (trained on Mozilla's PGO corpus: Speedometer, layout and style
+  benchmarks) plus link-time optimization across the Rust/C++ boundary. On top
+  of that, network, rendering and media limits are raised (see
+  `prefs/hallow.js`).
+- **Corporate identity.** The interface (menus, tabs, toolbars, Settings) is
+  set in IBM Plex Sans and the home page in Space Grotesk. Both fonts ship
+  inside Hallow, so nothing is installed system-wide.
 - **Lightweight.** Built without the crash reporter, updater, tests or debug
   symbols. AI features are blocked by default, so their models never
   download. Background tabs unload when memory runs low.
@@ -58,14 +66,15 @@ downloaded at build time:
 
 ```
 hallow.toml        Firefox version + SHA-512 to build, Hallow revision
-mozconfig          build options (identity, Rust, lightweight)
+mozconfig          build options (identity, Rust, PGO/LTO, lightweight)
 patches/           small source patches, applied strictly (no fuzz):
-                   chrome stylesheet, Firefox UA token, Startpage default
-branding/          logo.svg and wordmark.svg (icons are rendered from these),
-                   plus brand strings in overlay/
-prefs/hallow.js    default prefs (UI, privacy, Rust features)
-ui/hallow.css      chrome stylesheet
-packaging/         .desktop file, maintainer scripts, copyright
+                   chrome stylesheet, Firefox UA token, Startpage default,
+                   IBM Plex Sans interface font, Space Grotesk home page
+branding/          logo.png (every icon size is rendered from it),
+                   wordmark.svg, fonts/, brand strings in overlay/
+prefs/hallow.js    default prefs (UI, speed, privacy, Rust features)
+ui/                chrome and home page stylesheets
+packaging/         .desktop file, AppStream metadata, maintainer scripts
 tools/hallow-build the build tool
 ```
 
@@ -86,6 +95,9 @@ Other commands:
 - `cargo hb preview <firefox-dir>` applies Hallow's prefs and stylesheet to an
   official Firefox build, so you can check UI changes in minutes.
 - `cargo hb icons <dir>` renders the icon set.
+- `cargo hb profile <instrumented.tar.xz> --out <dir>` runs the PGO training
+  corpus with an instrumented build (`HALLOW_PGO=generate`); building with
+  `HALLOW_PGO=use HALLOW_PGO_DIR=<dir>` then applies the profile.
 
 ### Building locally
 
@@ -99,7 +111,7 @@ build takes a few hours on 4 cores.
 
 | Workflow | When | What |
 | --- | --- | --- |
-| `release.yml` | push to `main`/`development` touching the build, or manual | builds Firefox with Hallow's changes, test-installs the `.deb`, takes screenshots and publishes the `v<version>` release |
+| `release.yml` | push to `main`/`development` touching the build, or manual | builds Hallow in three PGO stages (instrumented build, training run, optimized build), test-installs the `.deb`, takes screenshots and publishes the `v<version>` release (about 4 hours) |
 | `upstream.yml` | daily | runs `cargo hb bump` and starts a release when Firefox ships |
 | `ci.yml` | every push / PR | rustfmt, clippy, unit tests; applies the patches and checks the prefs against the real Firefox source |
 | `ui-preview.yml` | UI or pref changes | screenshots of the official Firefox build with Hallow's prefs and stylesheet |

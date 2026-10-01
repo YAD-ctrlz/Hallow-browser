@@ -76,6 +76,35 @@ pref("browser.tabs.unloadOnLowMemory", true);
 // Write the session to disk every 60s instead of every 15s.
 pref("browser.sessionstore.interval", 60000);
 
+// ---- Speed -------------------------------------------------------------------
+// (The biggest speed-up is in the build: profile-guided + link-time
+// optimization, see mozconfig.) These raise limits Firefox sized for slower
+// networks and machines.
+
+// Networking: more parallel connections, no artificial request pacing, and
+// longer-lived DNS and TLS session caches for faster repeat visits.
+pref("network.http.max-connections", 1800);
+pref("network.http.max-persistent-connections-per-server", 10);
+pref("network.http.max-urgent-start-excessive-connections-per-host", 5);
+pref("network.http.pacing.requests.enabled", false);
+pref("network.dnsCacheExpiration", 3600);
+pref("network.ssl_tokens_cache_capacity", 16384);
+// Rendering: paint pages that are still loading sooner (120 ms -> 100 ms),
+// and bigger caches for accelerated canvas, glyphs and image decoding.
+pref("content.notify.interval", 100000);
+pref("gfx.canvas.accelerated.cache-items", 32768);
+pref("gfx.canvas.accelerated.cache-size", 512);
+pref("gfx.content.skia-font-cache-size", 32);
+pref("image.mem.decode_bytes_at_a_time", 32768);
+// Media: buffer further ahead so playback does not stall on busy networks.
+pref("media.memory_cache_max_size", 65536);
+pref("media.cache_readahead_limit", 600);
+pref("media.cache_resume_threshold", 300);
+// Built-in add-ons (new tab page, web compatibility fixes) ship with each
+// Hallow release instead of being swapped out by Mozilla's update channel,
+// which would also drop Hallow's new tab styling.
+pref("extensions.systemAddon.update.enabled", false);
+
 // ---- Rust-first engine features ------------------------------------------------
 
 // WebGPU through wgpu, Mozilla's Rust graphics stack. Enabled in Firefox

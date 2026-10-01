@@ -24,6 +24,23 @@ ac_add_options --enable-rust-simd
 # Rust components are optimized together with the C++ that calls them.
 ac_add_options --enable-lto=cross
 
+# --- Speed: profile-guided optimization ------------------------------------
+# Release builds are compiled three times like Firefox's own: an instrumented
+# build, a training run of Mozilla's PGO corpus (Speedometer, layout and
+# style benchmarks), and the final build optimized with that profile across
+# C++ and Rust. The release workflow sets HALLOW_PGO for each stage; local
+# builds without it are plain LTO builds.
+case "$HALLOW_PGO" in
+generate)
+  ac_add_options --enable-profile-generate=cross
+  ;;
+use)
+  ac_add_options --enable-profile-use=cross
+  ac_add_options --with-pgo-profile-path="$HALLOW_PGO_DIR/merged.profdata"
+  ac_add_options --with-pgo-jarlog="$HALLOW_PGO_DIR/en-US.log"
+  ;;
+esac
+
 # --- Lightweight -----------------------------------------------------------
 ac_add_options --enable-optimize
 ac_add_options --disable-debug

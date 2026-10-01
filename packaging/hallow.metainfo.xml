@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata: how software centers present Hallow.
+     @VERSION@ and @DATE@ are filled in by `cargo hb deb`. -->
+<component type="desktop-application">
+  <id>io.github.yad_ctrlz.Hallow</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MPL-2.0</project_license>
+  <name>Hallow</name>
+  <summary>Clean, fast and private web browser built on Gecko</summary>
+  <description>
+    <p>
+      Hallow is a web browser built from the newest Firefox release. It has a
+      minimal interface, no telemetry and no sponsored content, searches with
+      Startpage, and is compiled with profile-guided and link-time
+      optimization for speed.
+    </p>
+  </description>
+  <launchable type="desktop-id">hallow.desktop</launchable>
+  <icon type="stock">hallow</icon>
+  <url type="homepage">https://github.com/YAD-ctrlz/Hallow-browser</url>
+  <url type="bugtracker">https://github.com/YAD-ctrlz/Hallow-browser/issues</url>
+  <developer id="io.github.yad_ctrlz">
+    <name>YAD-ctrlz</name>
+  </developer>
+  <categories>
+    <category>Network</category>
+    <category>WebBrowser</category>
+  </categories>
+  <provides>
+    <binary>hallow</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+</component>

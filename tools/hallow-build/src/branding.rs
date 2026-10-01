@@ -104,9 +104,9 @@ pub fn install_branding(root: &Path, source: &Path) -> Result<()> {
         .context("copying browser/branding/unofficial")?;
     copy_dir(&branding.join("overlay"), &dest).context("copying branding/overlay")?;
 
-    // Icons and about-dialog artwork, rendered from the SVG master.
+    // Icons and about-dialog artwork, rendered from the master logo.
     let logo = icons::load_logo(&branding)?;
-    for size in icons::ICON_SIZES {
+    for size in icons::BRANDING_SIZES {
         write_file(
             &dest.join(format!("default{size}.png")),
             icons::render_png(&logo, size, size)?,
@@ -122,23 +122,30 @@ pub fn install_branding(root: &Path, source: &Path) -> Result<()> {
     ] {
         write_file(&content.join(name), icons::render_png(&logo, w, h)?)?;
     }
-    fs::copy(branding.join("logo.svg"), content.join("about-logo.svg"))?;
+    write_file(
+        &content.join("about-logo.svg"),
+        icons::logo_svg(&logo, 512)?,
+    )?;
     for name in ["about-wordmark.svg", "firefox-wordmark.svg"] {
         fs::copy(branding.join("wordmark.svg"), content.join(name))?;
     }
 
-    // The clean-UI chrome stylesheet ships in the branding package and is
-    // linked from browser.xhtml by patches/0001-*.patch.
-    fs::copy(root.join("ui/hallow.css"), content.join("hallow.css"))?;
+    // Stylesheets ship in the branding package: hallow.css is linked from
+    // browser.xhtml (patches/0001), hallow-home.css from the new tab page
+    // (patches/0005).
     let jar = content.join("jar.mn");
     let mut manifest = fs::read_to_string(&jar)?;
-    if !manifest.contains("content/branding/hallow.css") {
-        if !manifest.ends_with('\n') {
-            manifest.push('\n');
+    for sheet in ["hallow.css", "hallow-home.css"] {
+        fs::copy(root.join("ui").join(sheet), content.join(sheet))?;
+        let entry = format!("content/branding/{sheet}");
+        if !manifest.contains(&entry) {
+            if !manifest.ends_with('\n') {
+                manifest.push('\n');
+            }
+            manifest.push_str(&format!("  {entry}\n"));
         }
-        manifest.push_str("  content/branding/hallow.css\n");
-        fs::write(&jar, manifest)?;
     }
+    fs::write(&jar, manifest)?;
 
     // Default prefs. The branding pref file is loaded after firefox.js, so
     // these override Firefox's defaults while staying user-changeable.
@@ -203,7 +210,11 @@ mod tests {
         assert!(dest.join("default256.png").exists());
         assert!(dest.join("content/about-logo@2x.png").exists());
         let jar = fs::read_to_string(dest.join("content/jar.mn")).unwrap();
-        assert_eq!(jar.matches("hallow.css").count(), 1);
+        assert_eq!(jar.matches("content/branding/hallow.css").count(), 1);
+        assert_eq!(jar.matches("content/branding/hallow-home.css").count(), 1);
+        assert!(dest.join("content/hallow-home.css").exists());
+        let svg = fs::read_to_string(dest.join("content/about-logo.svg")).unwrap();
+        assert!(svg.contains("data:image/png;base64,"));
         let prefs = fs::read_to_string(dest.join("pref/firefox-branding.js")).unwrap();
         assert!(prefs.starts_with("pref(\"a\", 1);"));
         assert_eq!(prefs.matches("Hallow defaults").count(), 1);

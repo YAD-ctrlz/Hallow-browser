@@ -1,0 +1,12 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Hallow's home and new tab page: set in Space Grotesk, the corporate
+ * display face (bundled in <app>/fonts). Only the family changes; sizes and
+ * layout stay Firefox's. Linked from the new tab page by patches/0005. */
+
+body.activity-stream,
+body.activity-stream *:not(code, kbd, pre, samp) {
+  font-family: "Space Grotesk", system-ui, sans-serif !important;
+}

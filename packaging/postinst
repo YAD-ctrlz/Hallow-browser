@@ -10,6 +10,15 @@ configure)
     update-alternatives --install /usr/bin/gnome-www-browser \
         gnome-www-browser /usr/bin/hallow 70
 
+    # Make the launcher pick up Hallow's icon and menu entry right away; dpkg
+    # triggers usually do this, but not on every desktop.
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache --quiet --force /usr/share/icons/hicolor || true
+    fi
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database --quiet /usr/share/applications || true
+    fi
+
     # Ubuntu 23.10+ blocks unprivileged user namespaces for applications
     # without an AppArmor profile, which Gecko's sandbox needs. Install the
     # same "unconfined, but may use userns" profile Ubuntu ships for Firefox,

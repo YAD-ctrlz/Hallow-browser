@@ -1,0 +1,27 @@
+diff --git a/browser/extensions/newtab/data/content/abouthomecache/page.html.template b/browser/extensions/newtab/data/content/abouthomecache/page.html.template
+index fed8baf6..1b674290 100644
+--- a/browser/extensions/newtab/data/content/abouthomecache/page.html.template
++++ b/browser/extensions/newtab/data/content/abouthomecache/page.html.template
+@@ -33,6 +33,7 @@
+     <link rel="localization" href="toolkit/global/mozMessageBar.ftl" />
+     <link rel="stylesheet" href="chrome://global/skin/design-system/tokens-brand.css">
+     <link rel="stylesheet" href="chrome://newtab/content/css/activity-stream.css" />
++    <link rel="stylesheet" href="chrome://branding/content/hallow-home.css" />
+   </head>
+   <!-- Cached: {{ CACHE_TIME }} -->
+   <body class="activity-stream">
+diff --git a/browser/extensions/newtab/prerendered/activity-stream.html b/browser/extensions/newtab/prerendered/activity-stream.html
+index 0cb5b125..9d1e056f 100644
+--- a/browser/extensions/newtab/prerendered/activity-stream.html
++++ b/browser/extensions/newtab/prerendered/activity-stream.html
+@@ -32,6 +32,10 @@
+       rel="stylesheet"
+       href="chrome://newtab/content/css/activity-stream.css"
+     />
++    <link
++      rel="stylesheet"
++      href="chrome://branding/content/hallow-home.css"
++    />
+   </head>
+   <body class="activity-stream">
+     <div id="root"></div>

@@ -1,15 +1,9 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<!-- "hallow" wordmark, drawn with strokes so it needs no font. Colored by
-     the embedding page through -moz-context-properties: fill. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 0 348 96" fill="none"
-     stroke="context-fill" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M6 85V8M6 60a22 22 0 0 1 44 0V85"/>
-  <circle cx="101" cy="62" r="23"/>
-  <path d="M124 39V85"/>
-  <path d="M152 8V85"/>
-  <path d="M178 8V85"/>
-  <circle cx="229" cy="62" r="23"/>
-  <path d="M278 39l14 46 14-33 14 33 14-46"/>
+<!-- "Hallow" wordmark set in Space Grotesk (wght 700), converted to outlines
+     so it needs no font. Colored by the embedding page through
+     -moz-context-properties: fill. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="46 -720 3094 754" fill="context-fill">
+  <path d="M66 0V-700H198V-411H458V-700H590V0H458V-291H198V0ZM880 14Q827 14 785.0 -4.5Q743 -23 718.5 -58.5Q694 -94 694 -145Q694 -196 718.5 -230.5Q743 -265 786.5 -282.5Q830 -300 886 -300H1022V-328Q1022 -363 1000.0 -385.5Q978 -408 930 -408Q883 -408 860.0 -386.5Q837 -365 830 -331L714 -370Q726 -408 752.5 -439.5Q779 -471 823.5 -490.5Q868 -510 932 -510Q1030 -510 1087.0 -461.0Q1144 -412 1144 -319V-134Q1144 -104 1172 -104H1212V0H1128Q1091 0 1067.0 -18.0Q1043 -36 1043 -66V-67H1024Q1020 -55 1006.0 -35.5Q992 -16 962.0 -1.0Q932 14 880 14ZM902 -88Q955 -88 988.5 -117.5Q1022 -147 1022 -196V-206H895Q860 -206 840.0 -191.0Q820 -176 820 -149Q820 -122 841.0 -105.0Q862 -88 902 -88ZM1304 0V-700H1430V0ZM1570 0V-700H1696V0ZM2072 14Q1998 14 1939.0 -16.0Q1880 -46 1846.0 -103.0Q1812 -160 1812 -240V-256Q1812 -336 1846.0 -393.0Q1880 -450 1939.0 -480.0Q1998 -510 2072 -510Q2146 -510 2205.0 -480.0Q2264 -450 2298.0 -393.0Q2332 -336 2332 -256V-240Q2332 -160 2298.0 -103.0Q2264 -46 2205.0 -16.0Q2146 14 2072 14ZM2072 -98Q2130 -98 2168.0 -135.5Q2206 -173 2206 -243V-253Q2206 -323 2168.5 -360.5Q2131 -398 2072 -398Q2014 -398 1976.0 -360.5Q1938 -323 1938 -253V-243Q1938 -173 1976.0 -135.5Q2014 -98 2072 -98ZM2486 0 2416 -496H2541L2585 -85H2603L2667 -496H2869L2933 -85H2951L2995 -496H3120L3050 0H2841L2777 -411H2759L2695 0Z"/>
 </svg>

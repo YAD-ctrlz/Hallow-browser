@@ -58,6 +58,14 @@ enum Command {
         #[arg(long)]
         bootstrap: bool,
     },
+    /// PGO training run: profile an instrumented build (needs a display).
+    Profile {
+        /// `.tar.xz` from `mach package` of a HALLOW_PGO=generate build.
+        instrumented: PathBuf,
+        /// Where to write merged.profdata and en-US.log.
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Turn the packaged browser into a Debian package.
     Deb {
         /// Staged app directory or `.tar.xz` from `mach package`.
@@ -106,6 +114,7 @@ fn main() -> Result<()> {
         Command::Fetch => fetch::run(&ctx),
         Command::Prepare => branding::prepare(&ctx),
         Command::Build { bootstrap } => mach::build(&ctx, bootstrap),
+        Command::Profile { instrumented, out } => mach::profile(&ctx, &instrumented, &out),
         Command::Deb { input, output_dir } => {
             let path = deb::run(&ctx, input, output_dir)?;
             println!("{}", path.display());

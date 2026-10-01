@@ -82,10 +82,10 @@ const SONAME_PACKAGES: &[(&str, &str)] = &[
 const RECOMMENDS: &str = "libpci3, libegl1, libpulse0, libva2, libva-drm2, \
      libavcodec62 | libavcodec61 | libavcodec60 | libavcodec59 | libavcodec58 | libavcodec-extra";
 
-const DESCRIPTION: &str = "Clean, lightweight web browser built on Gecko
+const DESCRIPTION: &str = "Clean, fast and private web browser built on Gecko
  Hallow is a Firefox fork with a minimal interface, no telemetry, no
- sponsored content and Rust-first engine settings, built from the latest
- Firefox release.";
+ sponsored content and Startpage search, built from the latest Firefox
+ release with profile-guided and link-time optimization.";
 
 enum Source {
     Dir,
@@ -185,19 +185,48 @@ pub fn run(ctx: &Context, input: Option<PathBuf>, output_dir: Option<PathBuf>) -
         fs::read(packaging.join("hallow.desktop"))?,
         0o644,
     );
-    let logo = icons::load_logo(&ctx.root.join("branding"))?;
-    for size in icons::ICON_SIZES {
+    let branding = ctx.root.join("branding");
+    let logo = icons::load_logo(&branding)?;
+    for size in icons::THEME_SIZES {
         tree.add_bytes(
             &format!("usr/share/icons/hicolor/{size}x{size}/apps/hallow.png"),
             icons::render_png(&logo, size, size)?,
             0o644,
         );
     }
+    // Fallback location for launchers that do not use the icon theme.
     tree.add_bytes(
-        "usr/share/icons/hicolor/scalable/apps/hallow.svg",
-        logo,
+        "usr/share/pixmaps/hallow.png",
+        icons::render_png(&logo, 256, 256)?,
         0o644,
     );
+    // Lets software centers (GNOME Software, Ubuntu App Center, Discover)
+    // show Hallow with its name, icon and description.
+    let metainfo = fs::read_to_string(packaging.join("hallow.metainfo.xml"))?
+        .replace("@VERSION@", &version)
+        .replace("@DATE@", &iso_date(mtime()));
+    tree.add_bytes(
+        "usr/share/metainfo/io.github.yad_ctrlz.Hallow.metainfo.xml",
+        metainfo,
+        0o644,
+    );
+
+    // Corporate fonts. Gecko adds <app>/fonts to its private fontconfig set,
+    // so they are available to Hallow without being installed system-wide.
+    let mut fonts: Vec<PathBuf> = fs::read_dir(branding.join("fonts"))?
+        .map(|entry| entry.map(|e| e.path()))
+        .collect::<io::Result<_>>()?;
+    fonts.sort();
+    for font in &fonts {
+        let name = font.file_name().unwrap().to_string_lossy();
+        let dest = match font.extension().and_then(|e| e.to_str()) {
+            Some("ttf" | "otf") => format!("{INSTALL_DIR}/fonts/{name}"),
+            Some("txt") => format!("usr/share/doc/hallow/fonts/{name}"),
+            _ => continue,
+        };
+        tree.add_bytes(&dest, fs::read(font)?, 0o644);
+    }
+
     tree.add_bytes(
         "usr/share/doc/hallow/copyright",
         fs::read(packaging.join("copyright"))?,
@@ -371,6 +400,21 @@ fn mtime() -> u64 {
                 .map(|d| d.as_secs())
                 .unwrap_or(0)
         })
+}
+
+/// `YYYY-MM-DD` for a Unix timestamp (proleptic Gregorian calendar, UTC).
+fn iso_date(secs: u64) -> String {
+    // Howard Hinnant's days-to-civil algorithm.
+    let z = (secs / 86_400) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
 }
 
 fn tar_header(kind: tar::EntryType, mode: u32, size: u64, mtime: u64) -> tar::Header {
@@ -550,6 +594,13 @@ fn ar_member(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn iso_dates() {
+        assert_eq!(iso_date(0), "1970-01-01");
+        assert_eq!(iso_date(951_782_400), "2000-02-29");
+        assert_eq!(iso_date(1_790_870_400), "2026-10-01");
+    }
 
     #[test]
     fn tree_adds_parent_directories() {
