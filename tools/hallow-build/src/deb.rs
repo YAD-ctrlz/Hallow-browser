@@ -26,11 +26,14 @@ const INSTALL_DIR: &str = "usr/lib/hallow";
 /// The `t64` names are Debian 13 / Ubuntu 24.04+, the others older releases.
 const SONAME_PACKAGES: &[(&str, &str)] = &[
     ("ld-linux-x86-64.so.2", "libc6"),
+    ("libanl.so.1", "libc6"),
     ("libc.so.6", "libc6"),
     ("libdl.so.2", "libc6"),
     ("libm.so.6", "libc6"),
     ("libpthread.so.0", "libc6"),
+    ("libresolv.so.2", "libc6"),
     ("librt.so.1", "libc6"),
+    ("libutil.so.1", "libc6"),
     ("libgcc_s.so.1", "libgcc-s1"),
     ("libstdc++.so.6", "libstdc++6"),
     ("libasound.so.2", "libasound2t64 | libasound2"),
@@ -337,14 +340,24 @@ fn dpkg_owner(soname: &str) -> Option<String> {
         .args(["-S", &format!("*/{soname}")])
         .output()
         .ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let package = stdout.lines().next()?.split(':').next()?.trim().to_string();
+    owner_from_dpkg_query(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// Pick the package that ships the library for our architecture from
+/// `dpkg-query -S` output (`pkg[:arch][, pkg...]: /path`). Multilib copies
+/// such as `libc6-i386: /lib32/...` must not become dependencies.
+fn owner_from_dpkg_query(stdout: &str) -> Option<String> {
+    let line = stdout
+        .lines()
+        .find(|line| line.contains("/x86_64-linux-gnu/"))?;
+    let (packages, _path) = line.split_once(": ")?;
+    let package = packages.split(',').next()?.split(':').next()?.trim();
     if package.is_empty() {
         return None;
     }
     Some(match package.strip_suffix("t64") {
         Some(old) => format!("{package} | {old}"),
-        None => package,
+        None => package.to_string(),
     })
 }
 
@@ -554,6 +567,22 @@ mod tests {
             ]
         );
         assert_eq!(tree.installed_size_kib(), 5);
+    }
+
+    #[test]
+    fn dpkg_owner_ignores_other_architectures() {
+        let out = "libc6-i386: /lib32/libresolv.so.2\nlibc6:amd64: /lib/x86_64-linux-gnu/libresolv.so.2\n";
+        assert_eq!(owner_from_dpkg_query(out).as_deref(), Some("libc6"));
+        let out = "libfoo1t64:amd64: /usr/lib/x86_64-linux-gnu/libfoo.so.1\n";
+        assert_eq!(
+            owner_from_dpkg_query(out).as_deref(),
+            Some("libfoo1t64 | libfoo1")
+        );
+        assert_eq!(
+            owner_from_dpkg_query("libc6-i386: /lib32/libx.so.1\n"),
+            None
+        );
+        assert_eq!(owner_from_dpkg_query(""), None);
     }
 
     #[test]
