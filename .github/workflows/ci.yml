@@ -61,3 +61,20 @@ jobs:
         run: cargo hb prepare
       - name: Check prefs against Firefox
         run: cargo hb lint-prefs --strict
+
+  search-engine:
+    name: Startpage endpoints respond
+    runs-on: ubuntu-24.04
+    steps:
+      # Hallow's default search engine is defined in
+      # patches/0003-startpage-default-search-engine.patch; make sure the
+      # search and suggestion URLs it uses still work.
+      - name: Query Startpage
+        run: |
+          ua="Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0"
+          curl -fsS --retry 3 -A "$ua" -o search.html -w "search: HTTP %{http_code}\n" \
+            "https://www.startpage.com/sp/search?q=hallow+browser"
+          curl -fsS --retry 3 -A "$ua" -o suggest.json -w "suggestions: HTTP %{http_code}\n" \
+            "https://www.startpage.com/suggestions?format=opensearch&q=hallow"
+          head -c 300 suggest.json; echo
+          python3 -c "import json; d = json.load(open('suggest.json')); assert d[0] == 'hallow' and isinstance(d[1], list), d"
