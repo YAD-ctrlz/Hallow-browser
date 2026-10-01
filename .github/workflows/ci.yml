@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  tool:
+    name: Build tool (fmt, clippy, tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: tool-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: tool-${{ runner.os }}-
+      - run: cargo fmt --all --check
+      - run: cargo clippy --release --all-targets -- -D warnings
+      - run: cargo test --release
+
+  upstream-source:
+    name: Patches and prefs apply to Firefox
+    runs-on: ubuntu-24.04
+    env:
+      HALLOW_WORK_DIR: /mnt/hallow/work
+    steps:
+      - uses: actions/checkout@v5
+      - name: Prepare work directory
+        run: sudo mkdir -p /mnt/hallow && sudo chown "$USER" /mnt/hallow
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: tool-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: tool-${{ runner.os }}-
+      - name: Fetch Firefox source
+        run: cargo hb fetch
+      - name: Apply patches and branding
+        run: cargo hb prepare
+      - name: Check prefs against Firefox
+        run: cargo hb lint-prefs --strict

@@ -1,0 +1,38 @@
+#!/bin/sh
+set -e
+
+APPARMOR_PROFILE=/etc/apparmor.d/hallow
+
+case "$1" in
+configure)
+    update-alternatives --install /usr/bin/x-www-browser \
+        x-www-browser /usr/bin/hallow 70
+    update-alternatives --install /usr/bin/gnome-www-browser \
+        gnome-www-browser /usr/bin/hallow 70
+
+    # Ubuntu 23.10+ blocks unprivileged user namespaces for applications
+    # without an AppArmor profile, which Gecko's sandbox needs. Install the
+    # same "unconfined, but may use userns" profile Ubuntu ships for Firefox,
+    # only where the restriction (and AppArmor 4 syntax) exists.
+    if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] &&
+        [ -e /etc/apparmor.d/abi/4.0 ]; then
+        cat > "$APPARMOR_PROFILE" <<'PROFILE'
+# Installed by the hallow package: lets Hallow's sandbox use user namespaces.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile hallow /usr/lib/hallow/hallow{,-bin} flags=(unconfined) {
+  userns,
+
+  include if exists <local/hallow>
+}
+PROFILE
+        if command -v apparmor_parser >/dev/null 2>&1 &&
+            aa-enabled --quiet 2>/dev/null; then
+            apparmor_parser --replace --write-cache "$APPARMOR_PROFILE" || true
+        fi
+    fi
+    ;;
+esac
+
+exit 0

@@ -1,0 +1,23 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Hallow's chrome stylesheet: small refinements on top of Firefox's own
+ * theme, so light/dark mode, GTK themes and add-on themes keep working.
+ * The toolbar layout itself comes from prefs/hallow.js.
+ * Loaded after every other stylesheet in browser.xhtml (patches/0001). */
+
+/* "List all tabs" only when the tab strip actually overflows. */
+#TabsToolbar:not(:has(#tabbrowser-arrowscrollbox[overflowing])) #alltabs-button {
+  display: none;
+}
+
+/* Background tabs show their close button on hover only. */
+.tabbrowser-tab:not([selected], [multiselected], :hover) .tab-close-button {
+  opacity: 0;
+}
+
+/* No empty gap before the first tab in non-maximized windows. */
+.titlebar-spacer[type="pre-tabs"] {
+  display: none;
+}

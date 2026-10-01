@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+remove|deconfigure)
+    update-alternatives --remove x-www-browser /usr/bin/hallow
+    update-alternatives --remove gnome-www-browser /usr/bin/hallow
+    ;;
+esac
+
+exit 0

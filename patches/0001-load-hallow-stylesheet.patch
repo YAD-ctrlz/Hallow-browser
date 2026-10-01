@@ -1,0 +1,13 @@
+diff --git a/browser/base/content/browser.xhtml b/browser/base/content/browser.xhtml
+index 9a7d30d9..fddc3a62 100644
+--- a/browser/base/content/browser.xhtml
++++ b/browser/base/content/browser.xhtml
+@@ -57,6 +57,8 @@
+     rel="stylesheet"
+     href="chrome://global/content/resistfingerprinting/letterboxing.css"
+   />
++  <!-- Hallow: clean-UI refinements (ui/hallow.css), loaded last. -->
++  <link rel="stylesheet" href="chrome://branding/content/hallow.css" />
+ 
+   <link rel="localization" href="branding/brand.ftl"/>
+   <link rel="localization" href="browser/allTabsMenu.ftl"/>

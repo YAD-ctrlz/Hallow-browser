@@ -1,0 +1,240 @@
+name: Release
+
+# Builds Hallow from the Firefox release pinned in hallow.toml and publishes
+# hallow_<version>_amd64.deb as a GitHub release tagged v<version>.
+# A release is built once per version: increase [hallow].revision in
+# hallow.toml (or run `cargo hb bump` for a new Firefox) to ship changes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild and replace the assets even if the release exists
+        type: boolean
+        default: false
+  push:
+    branches: [main, development]
+    paths:
+      - hallow.toml
+      - mozconfig
+      - patches/**
+      - branding/**
+      - prefs/**
+      - ui/**
+      - packaging/**
+      - tools/**
+      - Cargo.lock
+      - .github/workflows/release.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # The Rust release Mozilla builds this Gecko with
+  # (taskcluster/kinds/toolchain/rust.yml in the Firefox source).
+  GECKO_RUST: "1.95.0"
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      firefox: ${{ steps.plan.outputs.firefox }}
+      tag: ${{ steps.plan.outputs.tag }}
+      build: ${{ steps.plan.outputs.build }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: tool-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: tool-${{ runner.os }}-
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          version=$(cargo hb version)
+          tag="v$version"
+          build=true
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && [ "$FORCE" != "true" ]; then
+            build=false
+            echo "::notice::Release $tag already exists. Increase [hallow].revision in hallow.toml to publish a new build."
+          fi
+          {
+            echo "version=$version"
+            echo "firefox=$(cargo hb version --firefox)"
+            echo "tag=$tag"
+            echo "build=$build"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    name: Build Hallow ${{ needs.plan.outputs.version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    env:
+      HALLOW_SCCACHE: "1"
+      SCCACHE_CACHE_SIZE: 6G
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Make room (disk and swap)
+        run: |
+          df -h
+          # Preinstalled SDKs a Gecko build never uses.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          # Build on whichever disk has the most free space.
+          base=/mnt/hallow
+          if [ ! -d /mnt ] || [ "$(df --output=avail -k / | tail -1)" -gt "$(df --output=avail -k /mnt | tail -1)" ]; then
+            base=/hallow
+          fi
+          sudo mkdir -p "$base" && sudo chown "$USER" "$base"
+          # Linking libxul with cross-language LTO needs more than 16 GB.
+          sudo fallocate -l 16G "$base.swap" && sudo chmod 600 "$base.swap"
+          sudo mkswap "$base.swap" && sudo swapon "$base.swap"
+          {
+            echo "HALLOW_WORK_DIR=$base/work"
+            echo "MOZBUILD_STATE_PATH=$base/mozbuild"
+            echo "SCCACHE_DIR=$base/sccache"
+          } >> "$GITHUB_ENV"
+          df -h; free -h
+
+      - name: Install Rust ${{ env.GECKO_RUST }} and Python venv support
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q python3-venv
+          rustup toolchain install "$GECKO_RUST" --profile minimal --target wasm32-wasip1
+          rustup default "$GECKO_RUST"
+          rustc --version
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: tool-gecko-rust-${{ env.GECKO_RUST }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Fetch Firefox ${{ needs.plan.outputs.firefox }} source
+        run: cargo hb fetch
+
+      - name: Apply Hallow patches, branding and prefs
+        run: cargo hb prepare
+
+      - name: Check prefs against this Firefox
+        run: cargo hb lint-prefs
+
+      - name: Restore compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-${{ needs.plan.outputs.firefox }}-${{ github.run_id }}
+          restore-keys: |
+            sccache-${{ needs.plan.outputs.firefox }}-
+            sccache-
+
+      - name: Compile Gecko (mach build + package)
+        run: cargo hb build --bootstrap
+
+      - name: Save compiler cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-${{ needs.plan.outputs.firefox }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Build .deb
+        run: |
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          cargo hb deb
+
+      - name: Install and launch the package
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ./dist/hallow_*.deb xvfb imagemagick
+          dpkg -s hallow | head -n 3
+          hallow --version | tee version.txt
+          grep -q "${{ needs.plan.outputs.firefox }}" version.txt
+          bash tools/screenshot.sh /usr/bin/hallow screenshots
+          sudo apt-get remove -y -q hallow
+
+      - name: Print screenshots as base64
+        run: |
+          for png in screenshots/*.png; do
+            convert "$png" -resize 1100x -quality 65 "${png%.png}.jpg"
+            echo "::group::${png%.png}.jpg (base64)"
+            base64 "${png%.png}.jpg"
+            echo "::endgroup::"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hallow-deb
+          path: dist/*.deb
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots/
+
+  publish:
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: hallow-deb
+          path: dist
+
+      - name: Publish ${{ needs.plan.outputs.tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          FIREFOX: ${{ needs.plan.outputs.firefox }}
+        run: |
+          cd dist
+          sha256sum *.deb > SHA256SUMS
+          deb=$(ls *.deb)
+          cat > notes.md <<EOF
+          Hallow $VERSION, built from the Firefox $FIREFOX source release.
+
+          ### Install (Debian 12+, Ubuntu 22.04+, amd64)
+
+          \`\`\`sh
+          sudo apt install ./$deb
+          \`\`\`
+
+          Then start **Hallow** from your app menu or run \`hallow\`.
+
+          ### SHA-256
+
+          \`\`\`
+          $(cat SHA256SUMS)
+          \`\`\`
+          EOF
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$deb" SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "$deb" SHA256SUMS \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Hallow $VERSION" \
+              --notes-file notes.md \
+              --latest
+          fi

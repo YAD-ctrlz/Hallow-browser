@@ -1,0 +1,63 @@
+name: UI preview
+
+# Screenshots of Hallow's prefs and stylesheet applied to the official
+# Firefox build of the pinned version. Takes minutes instead of the hours a
+# full Gecko build needs, so UI changes can be checked before a release.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, development]
+    paths:
+      - ui/**
+      - prefs/**
+      - hallow.toml
+      - tools/screenshot.sh
+      - tools/hallow-build/src/preview.rs
+      - .github/workflows/ui-preview.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: tool-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: tool-${{ runner.os }}-
+      - name: Install Xvfb and ImageMagick
+        run: sudo apt-get update -q && sudo apt-get install -y -q xvfb imagemagick
+      - name: Download official Firefox
+        run: |
+          version=$(cargo hb version --firefox)
+          echo "Firefox $version"
+          curl -fsSL --retry 3 \
+            "https://archive.mozilla.org/pub/firefox/releases/$version/linux-x86_64/en-US/firefox-$version.tar.xz" \
+            | tar -xJ -C "$RUNNER_TEMP"
+      - name: Apply Hallow prefs and stylesheet
+        run: cargo hb preview "$RUNNER_TEMP/firefox"
+      - name: Take screenshots
+        run: bash tools/screenshot.sh "$RUNNER_TEMP/firefox/firefox" screenshots
+      - name: Print screenshots as base64
+        run: |
+          for png in screenshots/*.png; do
+            convert "$png" -resize 1100x -quality 65 "${png%.png}.jpg"
+            echo "::group::${png%.png}.jpg (base64)"
+            base64 "${png%.png}.jpg"
+            echo "::endgroup::"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-preview
+          path: screenshots/

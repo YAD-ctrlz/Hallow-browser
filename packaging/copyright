@@ -1,0 +1,20 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Hallow
+Source: https://github.com/YAD-ctrlz/Hallow-browser
+
+Files: *
+Copyright: Mozilla Foundation and contributors
+           Hallow contributors
+License: MPL-2.0
+Comment:
+ Hallow is built from the Mozilla Firefox source release. Firefox is a
+ trademark of the Mozilla Foundation; Hallow is not affiliated with Mozilla.
+ Third-party code bundled with Firefox is listed in about:license.
+
+License: MPL-2.0
+ This Source Code Form is subject to the terms of the Mozilla Public
+ License, v. 2.0. If a copy of the MPL was not distributed with this
+ file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ .
+ On Debian systems, the full text of the Mozilla Public License 2.0 can
+ be found in /usr/share/common-licenses/MPL-2.0.

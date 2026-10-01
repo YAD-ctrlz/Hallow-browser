@@ -1,0 +1,44 @@
+# Hallow build configuration, sourced by mach as a shell script.
+# Copied into the Firefox tree by `cargo hb prepare`.
+
+ac_add_options --enable-application=browser
+
+# --- Identity --------------------------------------------------------------
+ac_add_options --with-app-name=hallow
+ac_add_options --with-app-basename=Hallow
+ac_add_options --with-branding=browser/branding/hallow
+ac_add_options --enable-update-channel=release
+ac_add_options MOZ_APP_REMOTINGNAME=hallow
+
+# --- Toolchain -------------------------------------------------------------
+# Fetch Mozilla's own clang, sysroot, cbindgen, nasm, node and wasi-sysroot,
+# the exact toolchains Firefox release builds use.
+ac_add_options --enable-bootstrap
+# Run against older system libstdc++ (Debian 11+, Ubuntu 22.04+).
+ac_add_options --enable-stdcxx-compat
+
+# --- Rust-first ------------------------------------------------------------
+# Explicit SIMD in Rust crates (encoding_rs and friends).
+ac_add_options --enable-rust-simd
+# ThinLTO across the Rust/C++ boundary: Stylo, WebRender, wgpu and the other
+# Rust components are optimized together with the C++ that calls them.
+ac_add_options --enable-lto=cross
+
+# --- Lightweight -----------------------------------------------------------
+ac_add_options --enable-optimize
+ac_add_options --disable-debug
+ac_add_options --disable-debug-symbols
+ac_add_options --disable-tests
+ac_add_options --disable-crashreporter
+# Updates come from the .deb / GitHub releases, not an in-app updater.
+ac_add_options --disable-updater
+
+ac_add_options --enable-default-toolkit=cairo-gtk3-x11-wayland
+
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-hallow
+
+# Optional compiler cache, enabled by CI (HALLOW_SCCACHE=1). sccache is
+# bootstrapped from Mozilla's toolchains like the compilers.
+if [ -n "$HALLOW_SCCACHE" ]; then
+  ac_add_options --with-ccache=sccache
+fi

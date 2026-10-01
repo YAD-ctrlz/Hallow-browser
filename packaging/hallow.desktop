@@ -1,0 +1,27 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Hallow
+GenericName=Web Browser
+Comment=Browse the web with a clean, lightweight Firefox-based browser
+Keywords=web;browser;internet;firefox;gecko;
+Exec=hallow %u
+Icon=hallow
+Terminal=false
+StartupNotify=true
+StartupWMClass=hallow
+Categories=Network;WebBrowser;
+MimeType=text/html;text/xml;application/xhtml+xml;application/xml;application/rss+xml;application/rdf+xml;application/pdf;application/json;image/gif;image/jpeg;image/png;image/webp;image/avif;image/jxl;image/svg+xml;video/webm;audio/webm;audio/ogg;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/mailto;
+Actions=new-window;new-private-window;profile-manager-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=hallow --new-window %u
+
+[Desktop Action new-private-window]
+Name=New Private Window
+Exec=hallow --private-window %u
+
+[Desktop Action profile-manager-window]
+Name=Open the Profile Manager
+Exec=hallow --ProfileManager

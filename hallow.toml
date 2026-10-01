@@ -1,0 +1,16 @@
+# Hallow release configuration. `cargo hb bump` keeps [firefox] current.
+
+[firefox]
+# Upstream Firefox release Hallow is built from (the newest Gecko).
+version = "157.0"
+# SHA-512 of firefox-<version>.source.tar.xz. `cargo hb bump` pins it;
+# when empty, the hash published in Mozilla's SHA512SUMS is used.
+sha512 = ""
+
+[hallow]
+# Increase to ship a new Hallow build of the same Firefox version.
+revision = 1
+
+[package]
+maintainer = "YAD-ctrlz <233045204+YAD-ctrlz@users.noreply.github.com>"
+homepage = "https://github.com/YAD-ctrlz/Hallow-browser"

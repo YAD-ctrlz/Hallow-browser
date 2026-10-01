@@ -1,0 +1,41 @@
+name: Track Firefox releases
+
+# Daily: when Mozilla ships a new Firefox release, point hallow.toml at it
+# and start a Hallow release build, so Hallow stays on the newest Gecko.
+
+on:
+  schedule:
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: tool-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: tool-${{ runner.os }}-
+      - id: bump
+        run: cargo hb bump
+      - name: Commit and start a release build
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Update to Firefox $VERSION"
+          git push
+          # Pushes made with GITHUB_TOKEN do not trigger workflows; ask directly.
+          gh workflow run release.yml --ref "$GITHUB_REF_NAME"

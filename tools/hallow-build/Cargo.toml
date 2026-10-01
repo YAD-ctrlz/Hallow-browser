@@ -1,0 +1,22 @@
+[package]
+name = "hallow-build"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MPL-2.0"
+description = "Fetches, patches, brands, builds and packages the Hallow browser"
+publish = false
+
+[dependencies]
+aho-corasick = "1"
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+lzma-rust2 = "0.21"
+md-5 = "0.11"
+resvg = { version = "0.48", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+tar = "0.4"
+toml = "1"
+ureq = { version = "3", features = ["platform-verifier"] }

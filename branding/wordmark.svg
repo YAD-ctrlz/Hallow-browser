@@ -1,0 +1,15 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<!-- "hallow" wordmark, drawn with strokes so it needs no font. Colored by
+     the embedding page through -moz-context-properties: fill. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 0 348 96" fill="none"
+     stroke="context-fill" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M6 85V8M6 60a22 22 0 0 1 44 0V85"/>
+  <circle cx="101" cy="62" r="23"/>
+  <path d="M124 39V85"/>
+  <path d="M152 8V85"/>
+  <path d="M178 8V85"/>
+  <circle cx="229" cy="62" r="23"/>
+  <path d="M278 39l14 46 14-33 14 33 14-46"/>
+</svg>
