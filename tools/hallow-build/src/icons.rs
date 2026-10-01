@@ -88,6 +88,19 @@ pub fn logo_svg(logo: &RgbaImage, size: u32) -> Result<String> {
     ))
 }
 
+/// A 4:3 SVG with the logo centered and padded, used in place of Firefox's
+/// "Kit" fox illustrations (Settings cards, notifications), which are shown
+/// with `object-fit: cover` and so need room around the logo.
+pub fn illustration_svg(logo: &RgbaImage) -> Result<String> {
+    let png = render_png(logo, 256, 256)?;
+    Ok(format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"400\" height=\"300\" \
+         viewBox=\"0 0 400 300\"><image x=\"100\" y=\"50\" width=\"200\" height=\"200\" \
+         href=\"data:image/png;base64,{}\"/></svg>\n",
+        base64(&png)
+    ))
+}
+
 fn base64(data: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);

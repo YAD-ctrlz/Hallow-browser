@@ -18,6 +18,15 @@ use crate::util::{copy_dir, write_file};
 
 const BRANDING_DIR: &str = "browser/branding/hallow";
 
+/// Firefox mascot artwork in toolkit/themes/shared/illustrations.
+const KIT_ILLUSTRATIONS: [&str; 5] = [
+    "kit-concerned.svg",
+    "kit-confetti.svg",
+    "kit-happy.svg",
+    "kit-holding-lock.svg",
+    "kit-in-circle.svg",
+];
+
 pub fn prepare(ctx: &Context) -> Result<()> {
     let source = ctx.source_dir();
     if !source.join("mach").exists() {
@@ -145,6 +154,22 @@ pub fn install_branding(root: &Path, source: &Path) -> Result<()> {
             manifest.push_str(&format!("  {entry}\n"));
         }
     }
+    // Firefox's "Kit" fox illustrations appear in Settings and notifications;
+    // a chrome override shows the Hallow logo instead, without patching the
+    // pages that use them.
+    write_file(
+        &content.join("hallow-illustration.svg"),
+        icons::illustration_svg(&logo)?,
+    )?;
+    if !manifest.contains("hallow-illustration.svg") {
+        manifest.push_str("  content/branding/hallow-illustration.svg\n");
+        for kit in KIT_ILLUSTRATIONS {
+            manifest.push_str(&format!(
+                "% override chrome://global/skin/illustrations/{kit} \
+                 chrome://branding/content/hallow-illustration.svg\n"
+            ));
+        }
+    }
     fs::write(&jar, manifest)?;
 
     // Default prefs. The branding pref file is loaded after firefox.js, so
@@ -213,6 +238,12 @@ mod tests {
         assert_eq!(jar.matches("content/branding/hallow.css").count(), 1);
         assert_eq!(jar.matches("content/branding/hallow-home.css").count(), 1);
         assert!(dest.join("content/hallow-home.css").exists());
+        assert_eq!(
+            jar.matches("% override chrome://global/skin/illustrations/kit-")
+                .count(),
+            5
+        );
+        assert!(dest.join("content/hallow-illustration.svg").exists());
         let svg = fs::read_to_string(dest.join("content/about-logo.svg")).unwrap();
         assert!(svg.contains("data:image/png;base64,"));
         let prefs = fs::read_to_string(dest.join("pref/firefox-branding.js")).unwrap();

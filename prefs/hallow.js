@@ -69,6 +69,15 @@ pref("extensions.getAddons.showPane", false);
 // Both can be changed in Settings > AI Controls.
 pref("browser.ai.control.default", "blocked");
 pref("browser.ai.control.translations", "enabled");
+// What each feature's own "Block" action in Settings turns off, so blocked
+// features are also hidden (e.g. "Ask an AI Chatbot" in the context menu).
+pref("browser.ml.chat.enabled", false);
+pref("browser.ml.chat.page", false);
+pref("browser.ml.linkPreview.enabled", false);
+pref("browser.tabs.groups.smart.enabled", false);
+pref("browser.tabs.groups.smart.userEnabled", false);
+pref("pdfjs.enableGuessAltText", false);
+pref("pdfjs.enableAltTextModelDownload", false);
 
 // Unload background tabs when the system runs low on memory (Firefox only
 // does this on Windows and macOS by default).

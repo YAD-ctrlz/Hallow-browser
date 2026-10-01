@@ -23,3 +23,14 @@
 #bottomBox {
   padding: 15px 10px;
 }
+
+/* Hallow is built from Firefox, not by Mozilla: hide Firefox's "designed by
+ * Mozilla" blurb, Mozilla's donation/contribute links and Firefox's terms and
+ * privacy links. The licensing link and the trademark line (brand.ftl) stay. */
+#communityDesc,
+#communityExperimentalDesc,
+#contributeDesc,
+#contributeDescReferrals,
+.bottom-link:not([href="about:license"]) {
+  display: none !important;
+}
