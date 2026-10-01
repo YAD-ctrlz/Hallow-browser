@@ -32,6 +32,9 @@ pref("browser.newtabpage.activity-stream.showSponsoredCheckboxes", false);
 pref("browser.newtabpage.activity-stream.system.showSponsored", false);
 pref("browser.newtabpage.activity-stream.showWeather", false);
 pref("browser.newtabpage.activity-stream.default.sites", "");
+// Use that empty list instead of the preset shortcuts (Wikipedia, YouTube,
+// ...) Mozilla serves through Remote Settings.
+pref("browser.topsites.useRemoteSetting", false);
 pref("browser.topsites.contile.enabled", false);
 
 // Address bar: no sponsored, trending or partner suggestions.
