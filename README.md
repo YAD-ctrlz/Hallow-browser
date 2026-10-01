@@ -17,6 +17,9 @@ release. It ships as a `.deb` on the
 - **Lightweight.** Built without the crash reporter, updater, tests or debug
   symbols. AI features are blocked by default, so their models never
   download. Background tabs unload when memory runs low.
+- **Private search.** Startpage is the default search engine in every region
+  (Google results without tracking or profiling), with plain startpage.com
+  URLs and no partner codes. Other engines are one click away in Settings.
 - **No telemetry.** Hallow is an unofficial build, so Firefox's telemetry
   upload is not compiled in, and studies and experiments are off.
 - **Rust-first.** See [Rust in Hallow](#rust-in-hallow).
@@ -56,7 +59,8 @@ downloaded at build time:
 ```
 hallow.toml        Firefox version + SHA-512 to build, Hallow revision
 mozconfig          build options (identity, Rust, lightweight)
-patches/           small source patches, applied strictly (no fuzz)
+patches/           small source patches, applied strictly (no fuzz):
+                   chrome stylesheet, Firefox UA token, Startpage default
 branding/          logo.svg and wordmark.svg (icons are rendered from these),
                    plus brand strings in overlay/
 prefs/hallow.js    default prefs (UI, privacy, Rust features)

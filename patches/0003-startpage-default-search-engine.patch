@@ -1,0 +1,49 @@
+diff --git a/toolkit/components/search/SearchEngineSelector.sys.mjs b/toolkit/components/search/SearchEngineSelector.sys.mjs
+index 3a42b383..d41aa077 100644
+--- a/toolkit/components/search/SearchEngineSelector.sys.mjs
++++ b/toolkit/components/search/SearchEngineSelector.sys.mjs
+@@ -233,6 +233,44 @@ export class SearchEngineSelector {
+       e => !e.optional
+     );
+ 
++    // Hallow: Startpage is the default search engine in every region, in
++    // normal and private windows. Hallow uses its own definition (plain
++    // startpage.com URLs, no partner code) in place of any regional
++    // Startpage entry, shaped like the engine the config would have chosen.
++    let hallowTemplate =
++      refinedSearchConfig.engines.find(
++        e => e.identifier == refinedSearchConfig.appDefaultEngineId
++      ) ?? refinedSearchConfig.engines[0];
++    if (hallowTemplate) {
++      refinedSearchConfig.engines = [
++        {
++          ...hallowTemplate,
++          identifier: "startpage",
++          name: "Startpage",
++          aliases: ["startpage"],
++          partnerCode: "",
++          telemetrySuffix: "",
++          clickUrl: null,
++          isNewUntil: null,
++          urls: {
++            search: {
++              base: "https://www.startpage.com/sp/search",
++              params: [],
++              searchTermParamName: "q",
++            },
++            suggestions: {
++              base: "https://www.startpage.com/osuggestions",
++              params: [],
++              searchTermParamName: "q",
++            },
++          },
++        },
++        ...refinedSearchConfig.engines.filter(e => e.identifier != "startpage"),
++      ];
++      refinedSearchConfig.appDefaultEngineId = "startpage";
++      refinedSearchConfig.appPrivateDefaultEngineId = "startpage";
++    }
++
+     if (
+       !refinedSearchConfig.appDefaultEngineId ||
+       !refinedSearchConfig.engines.find(
