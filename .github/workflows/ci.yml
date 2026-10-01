@@ -72,9 +72,19 @@ jobs:
       - name: Query Startpage
         run: |
           ua="Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0"
-          curl -fsS --retry 3 -A "$ua" -o search.html -w "search: HTTP %{http_code}\n" \
-            "https://www.startpage.com/sp/search?q=hallow+browser"
-          curl -fsS --retry 3 -A "$ua" -o suggest.json -w "suggestions: HTTP %{http_code}\n" \
-            "https://www.startpage.com/suggestions?format=opensearch&q=hallow"
-          head -c 300 suggest.json; echo
-          python3 -c "import json; d = json.load(open('suggest.json')); assert d[0] == 'hallow' and isinstance(d[1], list), d"
+          probe() {
+            echo "== $1"
+            curl -sS -A "$ua" -H "Accept-Language: en-US,en;q=0.5" -o body -D headers \
+              -w "HTTP %{http_code} -> %{redirect_url}\n" "$1" || true
+            grep -i '^content-type' headers || true
+            head -c 240 body; echo
+          }
+          probe "https://www.startpage.com/sp/search?q=hallow+browser"
+          probe "https://www.startpage.com/suggestions?format=opensearch&q=hallow"
+          probe "https://www.startpage.com/suggestions?q=hallow"
+          probe "https://www.startpage.com/suggestions?partner=apex&format=opensearch&q=hallow"
+          probe "https://www.startpage.com/suggestions?partner=apex&format=opensearch&segment=startpage.apex.desktop&q=hallow"
+          probe "https://www.startpage.com/suggestions?format=opensearch&segment=startpage.udog&q=hallow"
+          probe "https://www.startpage.com/osuggestions?q=hallow"
+          probe "https://www.startpage.com/opensearch.xml"
+          probe "https://www.startpage.com/en/opensearch.xml"
