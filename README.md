@@ -92,6 +92,7 @@ patches/           small source patches, applied strictly (no fuzz):
                    0002 Firefox UA token        0006 hardware codec preference
                    0003 Startpage default       0007 package updates in the UI
                    0004 IBM Plex Sans UI font   0008 no Mozilla update server
+                                                0009 Settings feedback to Hallow
 gecko/             files Hallow adds to the Firefox tree (copied by
                    `cargo hb prepare`): LinuxPackageUpdater, the Linux
                    backend of the update UI
