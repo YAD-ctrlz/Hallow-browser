@@ -25,7 +25,7 @@ echo "::group::Install"
 sudo apt-get update -q
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$deb" \
   xvfb imagemagick xdotool x11-utils desktop-file-utils \
-  python3-gi gir1.2-gtk-3.0 apt-utils gpg ffmpeg polkitd
+  python3-gi gir1.2-gtk-3.0 apt-utils gpg ffmpeg polkitd binutils
 dpkg -s hallow | sed -n '1,/^Description/p'
 version=$(dpkg-query -W -f='${Version}' hallow)
 hallow --version
@@ -47,6 +47,13 @@ if [ -e /etc/apt/sources.list.d/hallow.sources ]; then
 else
   echo "::warning::package has no update channel (no archive key committed)"
 fi
+# Hardware video decoding: Gecko's GPU probe (gfxtest) and the VA-API
+# decoders of its bundled FFmpeg (H.264 goes through the system's libavcodec).
+test -x /usr/lib/hallow/gfxtest
+for codec in av1 vp9 vp8; do
+  strings /usr/lib/hallow/libmozavcodec.so | grep -qx "${codec}_vaapi" ||
+    { echo "::error::bundled FFmpeg lacks the ${codec} VA-API decoder"; exit 1; }
+done
 desktop-file-validate /usr/share/applications/hallow.desktop
 grep -q '^Icon=hallow$' /usr/share/applications/hallow.desktop
 grep -q '^StartupWMClass=hallow$' /usr/share/applications/hallow.desktop

@@ -302,6 +302,28 @@ def main():
                 panel == "apply",
                 f"{panel}: {label}",
             )
+            # Settings shows the same update state in its update section.
+            visible = browser.m.run(
+                """
+                Services.wm.getMostRecentWindow("Browser:About")?.close();
+                const win = Services.wm.getMostRecentWindow("navigator:browser");
+                win.openPreferences("paneGeneral");
+                const deadline = Date.now() + 30000;
+                for (;;) {
+                  const doc = win.gBrowser.selectedBrowser.contentDocument;
+                  const group = doc?.querySelector('setting-group[groupid="updates"]');
+                  if (group && !group.hidden && doc.readyState == "complete") {
+                    group.scrollIntoView();
+                    await new Promise(r => setTimeout(r, 3000));
+                    return group.getBoundingClientRect().height > 0;
+                  }
+                  if (Date.now() > deadline) return null;
+                  await new Promise(r => setTimeout(r, 250));
+                }
+                """
+            )
+            browser.screenshot("settings-updates")
+            expect("Settings shows Hallow updates", bool(visible), visible)
         marker = Path("/usr/lib/hallow/update-test-marker")
         expect(
             "the new package is installed",

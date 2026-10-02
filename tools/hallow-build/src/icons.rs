@@ -305,6 +305,11 @@ mod tests {
             let size_f = size as f32;
             assert!(major >= 0.9 * size_f, "{size}px: spans {w}x{h}");
             assert!(minor >= 0.82 * size_f, "{size}px: spans {w}x{h}");
+            // What sets the apparent size is how much of the canvas is
+            // covered: Firefox's icons cover 54-71%; the plain logo 54%.
+            let opaque = icon.pixels().filter(|p| p[3] > 128).count() as f32;
+            let coverage = opaque / (size * size) as f32;
+            assert!(coverage >= 0.57, "{size}px: covers {coverage:.2}");
         }
     }
 
