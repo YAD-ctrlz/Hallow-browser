@@ -16,21 +16,35 @@ release. It ships as a `.deb` on the
   stories or weather. No onboarding tours, promos or "what's new" pages.
 - **Fast.** Compiled the way Mozilla compiles Firefox releases: profile-guided
   optimization (trained on Mozilla's PGO corpus: Speedometer, layout and style
-  benchmarks) plus link-time optimization across the Rust/C++ boundary. On top
-  of that, network, rendering and media limits are raised (see
-  `prefs/hallow.js`).
+  benchmarks), link-time optimization across the Rust/C++ boundary, Rust at
+  `opt-level=2`, release configuration. Everything else (networking, HTTP/2
+  and HTTP/3, caches, WebRender, the JavaScript and WebAssembly JITs) runs
+  with Firefox's tuned defaults rather than unmeasured pref tweaks.
+- **Efficient video.** Hardware video decoding (VA-API on Linux) as Firefox's
+  own driver checks allow, with automatic fallback to software. Streaming
+  sites are steered to the codec your GPU decodes: AV1 only where it decodes
+  in hardware, otherwise VP9, otherwise H.264.
+- **Updates itself.** Hallow checks its stable channel daily and in *About
+  Hallow*, and installs new versions through the system package manager
+  after you confirm with your password. Only the `release` branch can
+  publish to that channel, and every update is signature-checked.
 - **Corporate identity.** The interface (menus, tabs, toolbars, Settings) is
   set in IBM Plex Sans and the home page in Space Grotesk. Both fonts ship
   inside Hallow, so nothing is installed system-wide.
-- **Lightweight.** Built without the crash reporter, updater, tests or debug
-  symbols. AI features are blocked by default, so their models never
-  download. Background tabs unload when memory runs low.
+- **Lightweight.** Built without the crash reporter, tests or debug symbols.
+  AI features are blocked by default, so their models never download.
+  Nothing Hallow adds runs at startup. Long-idle background tabs unload only
+  when the system runs low on memory.
 - **Private search.** Startpage is the default search engine in every region
   (Google results without tracking or profiling), with plain startpage.com
   URLs and no partner codes. Other engines are one click away in Settings.
 - **No telemetry.** Hallow is an unofficial build, so Firefox's telemetry
   upload is not compiled in, and studies and experiments are off.
 - **Rust-first.** See [Rust in Hallow](#rust-in-hallow).
+- **Proper Linux app.** Icons at every standard size (16-512 px plus SVG)
+  sized like other apps' in menus, panels, docks (Plank) and Alt-Tab; the
+  window, desktop file and icon belong together (`WM_CLASS` / app ID
+  `hallow`).
 
 ## Install
 
@@ -40,12 +54,19 @@ Download `hallow_<version>_amd64.deb` from the latest release, then:
 sudo apt install ./hallow_*_amd64.deb
 ```
 
-The package needs Debian 12+ or Ubuntu 22.04+ on amd64. It installs to
-`/usr/lib/hallow`, adds `hallow` to your `PATH`, adds an app-menu entry and
-registers Hallow as an `x-www-browser` alternative. Profiles are kept apart
-from Firefox's, in `~/.config/mozilla/hallow`.
+The package needs Debian 12+, Ubuntu 22.04+ or Linux Mint 21+ on amd64. It
+installs to `/usr/lib/hallow`, adds `hallow` to your `PATH`, adds an app-menu
+entry with its icons and registers Hallow as an `x-www-browser` alternative.
+Profiles are kept apart from Firefox's, in `~/.config/mozilla/hallow`.
 
-Hallow does not update itself. Install a newer `.deb` from Releases to update.
+That is the last time you download Hallow by hand. The package adds Hallow's
+stable update channel (`/etc/apt/sources.list.d/hallow.sources`, a signed APT
+repository) and Hallow checks it once a day and whenever you open *Help >
+About Hallow*: when a new version is out, *Update to …* installs it (your
+system asks for your password) and *Restart to update* switches to it. Your
+system's update manager offers Hallow updates as well. Delete
+`hallow.sources` to opt out. (Versions before 157.0-7 had no updater; install
+157.0-7 or newer once by hand.)
 
 ## Rust in Hallow
 
@@ -54,10 +75,9 @@ Hallow leans on Rust where Gecko allows it:
 
 | Where | What |
 | --- | --- |
-| WebGPU | `dom.webgpu.enabled` turns on WebGPU, which runs on [wgpu](https://github.com/gfx-rs/wgpu), Mozilla's Rust graphics stack. Firefox Release still has it off on Linux. |
-| JPEG XL | `image.jxl.enabled` turns on JPEG XL images, decoded by the Rust `jxl-rs` decoder. Firefox enables this only in Nightly. |
+| Engine | Stylo (CSS), WebRender (graphics), the AV1 decoder dav1d's Rust glue, encoding_rs and many more Gecko components are Rust; Hallow builds all of it with Mozilla's own Rust release. WebGPU (wgpu) and JPEG XL (jxl-rs) follow Firefox's release schedule: Hallow no longer turns them on early, because Firefox does not ship them on Linux yet. |
 | Build | `--enable-rust-simd` adds explicit SIMD to Rust crates. `--enable-lto=cross` applies ThinLTO across the Rust/C++ boundary, so Stylo, WebRender and the other Rust components are optimized together with the C++ that calls them. |
-| Tooling | All of Hallow's own code is Rust ([`tools/hallow-build`](tools/hallow-build)): fetching and verifying Firefox, patching, branding, rendering the icons from SVG (resvg), linting prefs, and writing the `.deb` itself (ar, tar and xz in pure Rust, no `dpkg-deb`). |
+| Tooling | Hallow's build tool is Rust ([`tools/hallow-build`](tools/hallow-build)): fetching and verifying Firefox, patching, branding, rendering every icon size from the logo, linting prefs, and writing the `.deb` itself (ar, tar and xz in pure Rust, no `dpkg-deb`). |
 
 ## How it works
 
@@ -66,17 +86,34 @@ downloaded at build time:
 
 ```
 hallow.toml        Firefox version + SHA-512 to build, Hallow revision
-mozconfig          build options (identity, Rust, PGO/LTO, lightweight)
+mozconfig          build options (identity, release/PGO/LTO, updates)
 patches/           small source patches, applied strictly (no fuzz):
-                   chrome stylesheet, Firefox UA token, Startpage default,
-                   IBM Plex Sans interface font, Space Grotesk home page
+                   0001 chrome stylesheet       0005 Space Grotesk home page
+                   0002 Firefox UA token        0006 hardware codec preference
+                   0003 Startpage default       0007 package updates in the UI
+                   0004 IBM Plex Sans UI font   0008 no Mozilla update server
+gecko/             files Hallow adds to the Firefox tree (copied by
+                   `cargo hb prepare`): LinuxPackageUpdater, the Linux
+                   backend of the update UI
 branding/          logo.png (every icon size is rendered from it),
                    wordmark.svg, fonts/, brand strings in overlay/
-prefs/hallow.js    default prefs (UI, speed, privacy, Rust features)
+prefs/hallow.js    default prefs (UI, privacy, updates, codecs)
 ui/                chrome and home page stylesheets
-packaging/         .desktop file, AppStream metadata, maintainer scripts
-tools/hallow-build the build tool
+packaging/linux/   .deb contents: .desktop file, AppStream metadata,
+                   maintainer scripts, update channel (APT source, archive
+                   key), update helper and its polkit policy
+tools/             the build tool (hallow-build), the update channel
+                   builder and the package/browser/update tests
+docs/RELEASING.md  branches, release pipeline, signing key setup
 ```
+
+Everything except `packaging/linux` and `gecko/.../LinuxPackageUpdater` is
+shared, platform-independent Hallow: UI, prefs, branding, patches, the update
+UI and channel model. Linux-specific code is limited to packaging, desktop
+integration and how an update is installed. Platform features (VA-API,
+window identity, icon lookup) come from Firefox's own platform layers, which
+Hallow configures rather than replaces, so a Windows build can reuse the
+rest with its own packaging and installer.
 
 The build tool runs these steps (`cargo hb` is a Cargo alias for it):
 
@@ -107,12 +144,18 @@ sysroot and other toolchains are downloaded from Mozilla by the build
 (`--enable-bootstrap`), so the binary runs on older distributions too. A full
 build takes a few hours on 4 cores.
 
-### Releases (GitHub Actions)
+### Branches, builds and releases (GitHub Actions)
+
+`release` is the production branch: what it holds is what stable Hallow
+users run. Work happens on `development` and feature branches. See
+[docs/RELEASING.md](docs/RELEASING.md) for the full model and the one-time
+signing key setup.
 
 | Workflow | When | What |
 | --- | --- | --- |
-| `release.yml` | push to `main`/`development` touching the build, or manual | builds Hallow in three PGO stages (instrumented build, training run, optimized build), test-installs the `.deb`, takes screenshots and publishes the `v<version>` release (about 4 hours) |
-| `upstream.yml` | daily | runs `cargo hb bump` and starts a release when Firefox ships |
+| `release.yml` | push to `release` only | builds Hallow in three PGO stages, tests the package (install, icons and desktop integration, browser checks, the update mechanism), signs the stable update channel in the `production` environment and publishes `v<version>` as the latest release (about 4 hours) |
+| `build.yml` | push to any other branch, pull requests | LTO build (no PGO) with a `~devN` version and the same package tests; the `.deb` is a CI artifact, never published |
+| `upstream.yml` | daily | runs `cargo hb bump` on `development` when Firefox ships a release |
 | `ci.yml` | every push / PR | rustfmt, clippy, unit tests; applies the patches and checks the prefs against the real Firefox source |
 | `ui-preview.yml` | UI or pref changes | screenshots of the official Firefox build with Hallow's prefs and stylesheet |
 

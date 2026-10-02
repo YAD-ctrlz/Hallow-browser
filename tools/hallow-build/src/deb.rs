@@ -21,6 +21,8 @@ use crate::{elf, fetch, icons};
 
 const ARCH: &str = "amd64";
 const INSTALL_DIR: &str = "usr/lib/hallow";
+/// Hallow's APT source, a configuration file the user may edit or delete.
+const UPDATE_SOURCES: &str = "etc/apt/sources.list.d/hallow.sources";
 
 /// Shared libraries Firefox links against, mapped to Debian dependencies.
 /// The `t64` names are Debian 13 / Ubuntu 24.04+, the others older releases.
@@ -78,9 +80,25 @@ const SONAME_PACKAGES: &[(&str, &str)] = &[
     ("libz.so.1", "zlib1g"),
 ];
 
-/// Libraries Gecko loads at runtime with dlopen() for optional features.
-const RECOMMENDS: &str = "libpci3, libegl1, libpulse0, libva2, libva-drm2, \
+/// Needed at runtime but not linked: VA-API (Gecko dlopen()s libva for
+/// hardware video decoding) and pkexec, which Hallow uses to install its
+/// updates.
+const RUNTIME_DEPENDS: &[&str] = &["libva2", "libva-drm2", "pkexec | policykit-1"];
+
+/// Libraries and drivers Gecko loads at runtime for optional features: the
+/// VA-API drivers that decode video on the GPU, and FFmpeg for H.264/AAC.
+const RECOMMENDS: &str = "libpci3, libegl1, libpulse0, va-driver-all | va-driver, \
      libavcodec62 | libavcodec61 | libavcodec60 | libavcodec59 | libavcodec58 | libavcodec-extra";
+
+/// Default URI of Hallow's stable APT repository: the assets of the latest
+/// GitHub release, which only the release workflow (release branch)
+/// publishes. With `Suites: download/` APT reads
+/// `<URI>download/InRelease` and friends.
+pub const STABLE_REPOSITORY: &str = "https://github.com/YAD-ctrlz/Hallow-browser/releases/latest/";
+
+/// Files of the packaged app Linux does not ship: Gecko's MAR updater.
+/// Packages are updated by the system package manager.
+const EXCLUDED_APP_FILES: &[&str] = &["updater", "updater.ini"];
 
 const DESCRIPTION: &str = "Clean, fast and private web browser built on Gecko
  Hallow is a Firefox fork with a minimal interface, no telemetry, no
@@ -162,14 +180,30 @@ impl Tree {
     }
 }
 
-pub fn run(ctx: &Context, input: Option<PathBuf>, output_dir: Option<PathBuf>) -> Result<PathBuf> {
+/// Where installed Hallows look for updates.
+pub struct UpdateChannel {
+    /// Armored public key that signs the repository.
+    pub key: PathBuf,
+    /// Repository URI (see [`STABLE_REPOSITORY`]).
+    pub uri: String,
+}
+
+pub fn run(
+    ctx: &Context,
+    input: Option<PathBuf>,
+    output_dir: Option<PathBuf>,
+    channel: Option<UpdateChannel>,
+) -> Result<PathBuf> {
     let app_dir = resolve_input(ctx, input)?;
-    let version = ctx.config.package_version();
+    let version = ctx.version();
     check_application_ini(&app_dir, &ctx.config.firefox.version)?;
 
-    let packaging = ctx.root.join("packaging");
+    let packaging = ctx.root.join("packaging/linux");
     let mut tree = Tree::default();
     tree.add_disk_dir(INSTALL_DIR, &app_dir)?;
+    for name in EXCLUDED_APP_FILES {
+        tree.0.remove(&format!("{INSTALL_DIR}/{name}"));
+    }
     // Tells Gecko it is managed by a package manager (hides update UI etc.).
     tree.add_bytes(
         &format!("{INSTALL_DIR}/is-packaged-app"),
@@ -186,18 +220,27 @@ pub fn run(ctx: &Context, input: Option<PathBuf>, output_dir: Option<PathBuf>) -
         0o644,
     );
     let branding = ctx.root.join("branding");
+    // The app icon at every standard size, so menus, panels, docks and the
+    // window switcher get a pixel-fitted image instead of a scaled one; the
+    // SVG covers in-between sizes. `Icon=hallow` in the desktop file and the
+    // window icons Gecko sets (branding default<N>.png) use the same art.
     let logo = icons::load_logo(&branding)?;
     for size in icons::THEME_SIZES {
         tree.add_bytes(
             &format!("usr/share/icons/hicolor/{size}x{size}/apps/hallow.png"),
-            icons::render_png(&logo, size, size)?,
+            icons::render_icon(&logo, size)?,
             0o644,
         );
     }
+    tree.add_bytes(
+        "usr/share/icons/hicolor/scalable/apps/hallow.svg",
+        icons::icon_svg(&logo)?,
+        0o644,
+    );
     // Fallback location for launchers that do not use the icon theme.
     tree.add_bytes(
         "usr/share/pixmaps/hallow.png",
-        icons::render_png(&logo, 256, 256)?,
+        icons::render_icon(&logo, 256)?,
         0o644,
     );
     // Lets software centers (GNOME Software, Ubuntu App Center, Discover)
@@ -233,7 +276,40 @@ pub fn run(ctx: &Context, input: Option<PathBuf>, output_dir: Option<PathBuf>) -
         0o644,
     );
 
-    let depends = depends(&app_dir)?;
+    // Built-in updates: Hallow checks its stable channel (an APT repository
+    // signed with the Hallow archive key) and installs updates with the
+    // system package manager through this pkexec helper. The system's own
+    // update manager sees the same repository.
+    tree.add_bytes(
+        &format!("{INSTALL_DIR}/hallow-update-helper"),
+        fs::read(packaging.join("hallow-update-helper"))?,
+        0o755,
+    );
+    tree.add_bytes(
+        "usr/share/polkit-1/actions/io.github.yad_ctrlz.Hallow.update.policy",
+        fs::read(packaging.join("io.github.yad_ctrlz.Hallow.update.policy"))?,
+        0o644,
+    );
+    match channel {
+        Some(channel) => {
+            let key = fs::read_to_string(&channel.key)
+                .with_context(|| format!("reading {}", channel.key.display()))?;
+            if !key.contains("-----BEGIN PGP PUBLIC KEY BLOCK-----") {
+                bail!(
+                    "{} is not an armored OpenPGP public key",
+                    channel.key.display()
+                );
+            }
+            tree.add_bytes("usr/share/keyrings/hallow-archive-keyring.asc", key, 0o644);
+            let sources = fs::read_to_string(packaging.join("hallow.sources"))?
+                .replace("@URI@", &channel.uri);
+            tree.add_bytes(UPDATE_SOURCES, sources, 0o644);
+        }
+        None => eprintln!("warning: no update channel key; this package will not receive updates"),
+    }
+
+    let mut depends = depends(&app_dir)?;
+    depends.extend(RUNTIME_DEPENDS.iter().map(|d| d.to_string()));
     let control = control_file(ctx, &version, &depends, tree.installed_size_kib());
     eprintln!("{control}");
 
@@ -537,6 +613,17 @@ fn write_deb(
     let mut control_tree = Tree::default();
     control_tree.add_bytes("control", control, 0o644);
     control_tree.add_bytes("md5sums", md5sums, 0o644);
+    // Files under /etc are configuration: dpkg keeps the user's changes (or
+    // deletion) on upgrade and removes them only on purge.
+    let conffiles: String = tree
+        .0
+        .iter()
+        .filter(|(path, source)| path.starts_with("etc/") && !matches!(source, Source::Dir))
+        .map(|(path, _)| format!("/{path}\n"))
+        .collect();
+    if !conffiles.is_empty() {
+        control_tree.add_bytes("conffiles", conffiles, 0o644);
+    }
     for (name, body) in scripts {
         control_tree.add_bytes(name, body.clone(), 0o755);
     }
@@ -670,6 +757,7 @@ mod tests {
             "usr/bin/test",
             Source::Symlink("../lib/test/sub/run.sh".into()),
         );
+        tree.add_bytes("etc/test/test.conf", "setting=1\n", 0o644);
         let control = "Package: hallow-test\nVersion: 1.0-1\nArchitecture: all\n\
                        Maintainer: Test <t@example.com>\nDescription: test\n test package\n";
         let deb = tmp.join("test.deb");
@@ -695,6 +783,17 @@ mod tests {
         let info = String::from_utf8_lossy(&info.stdout);
         assert!(info.contains("Package: hallow-test"), "{info}");
         assert!(info.contains("postinst"), "{info}");
+        // Files under /etc are registered as configuration files.
+        let conffiles = Command::new("dpkg-deb")
+            .args(["--info"])
+            .arg(&deb)
+            .arg("conffiles")
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&conffiles.stdout),
+            "/etc/test/test.conf\n"
+        );
 
         let contents = Command::new("dpkg-deb")
             .arg("--contents")

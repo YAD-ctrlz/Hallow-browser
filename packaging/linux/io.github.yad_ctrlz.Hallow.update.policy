@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Lets Hallow install its own updates through the system package manager
+     (/usr/lib/hallow/hallow-update-helper, started with pkexec) after an
+     administrator authenticates, like the system's update manager does. -->
+<policyconfig>
+  <vendor>Hallow</vendor>
+  <vendor_url>https://github.com/YAD-ctrlz/Hallow-browser</vendor_url>
+  <icon_name>hallow</icon_name>
+  <action id="io.github.yad_ctrlz.Hallow.update">
+    <description>Update Hallow</description>
+    <message>Authentication is required to install the Hallow update</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/hallow/hallow-update-helper</annotate>
+  </action>
+</policyconfig>

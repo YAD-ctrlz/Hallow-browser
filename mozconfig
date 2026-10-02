@@ -41,14 +41,28 @@ use)
   ;;
 esac
 
-# --- Lightweight -----------------------------------------------------------
+# --- Release build ---------------------------------------------------------
+# Firefox's release configuration, spelled out: optimized C++ and Rust
+# (-C opt-level=2, Mozilla's release setting), no debug code or symbols,
+# release-engineering defaults (--enable-release).
+ac_add_options --enable-release
 ac_add_options --enable-optimize
+ac_add_options RUSTC_OPT_LEVEL=2
 ac_add_options --disable-debug
 ac_add_options --disable-debug-symbols
 ac_add_options --disable-tests
 ac_add_options --disable-crashreporter
-# Updates come from the .deb / GitHub releases, not an in-app updater.
-ac_add_options --disable-updater
+
+# --- Updates ---------------------------------------------------------------
+# Firefox's update framework provides the update UI (About dialog, Settings,
+# notifications) on every platform. How an update is installed is
+# platform-specific: Linux packages are updated through the system package
+# manager from Hallow's signed repository (LinuxPackageUpdater), so the .deb
+# does not ship Gecko's own updater binary. MAR channel IDs are Hallow's
+# own, so Firefox update packages are never accepted.
+ac_add_options --enable-updater
+ac_add_options MAR_CHANNEL_ID=hallow-release
+ac_add_options ACCEPTED_MAR_CHANNEL_IDS=hallow-release
 
 ac_add_options --enable-default-toolkit=cairo-gtk3-x11-wayland
 

@@ -1,48 +1,42 @@
 name: Release
 
-# Builds Hallow from the Firefox release pinned in hallow.toml and publishes
-# hallow_<version>_amd64.deb as a GitHub release tagged v<version>.
-# A release is built once per version: increase [hallow].revision in
-# hallow.toml (or run `cargo hb bump` for a new Firefox) to ship changes.
+# Hallow's production pipeline (continuous delivery). The release branch is
+# the source of truth for stable Hallow: every commit that reaches it is
+# built, tested and published here, and nothing else ever is.
 #
-# Like Firefox's own release builds, Hallow is built with profile-guided
-# optimization (PGO) on top of cross-language LTO, in three stages:
-#   1. an instrumented build,
-#   2. a training run of Mozilla's PGO corpus with it (under Xvfb),
-#   3. the final build, optimized with the recorded profile.
+#   release branch commit
+#   -> PGO + LTO build (three stages, like Firefox's own release builds)
+#   -> package tests (install, desktop integration, browser checks, updates)
+#   -> the `production` environment: sign Hallow's stable update channel
+#      (an APT repository) with the archive key, attest the package's
+#      provenance, publish GitHub release v<version> as the latest release
+#   -> installed Hallows find the update (Hallow's update check, or the
+#      system's update manager) and install it after verifying the signature.
+#
+# Safeguards: the workflow refuses to run for anything but the release
+# branch; the signing key is a secret of the `production` environment, which
+# only admits the release branch (see docs/RELEASING.md); a release is only
+# published after every test passed, and the package's version, tag and
+# commit must match. Development builds come from build.yml and are never
+# published.
 
 on:
+  push:
+    branches: [release]
   workflow_dispatch:
     inputs:
       force:
-        description: Rebuild and replace the assets even if the release exists
+        description: Rebuild and replace the assets of an existing release
         type: boolean
         default: false
-      pgo:
-        description: Profile-guided optimization (three build stages)
-        type: boolean
-        default: true
-  push:
-    branches: [main, development]
-    paths:
-      - hallow.toml
-      - mozconfig
-      - patches/**
-      - branding/**
-      - prefs/**
-      - ui/**
-      - packaging/**
-      - tools/**
-      - Cargo.lock
-      - .github/actions/**
-      - .github/workflows/release.yml
 
 permissions:
   contents: read
 
+# One release at a time, and never cancel one that may be publishing.
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: true
+  group: release
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -51,6 +45,7 @@ env:
   GECKO_RUST: "1.95.0"
   HALLOW_SCCACHE: "1"
   SCCACHE_CACHE_SIZE: 6G
+  ARCHIVE_KEY: packaging/linux/hallow-archive-keyring.asc
 
 jobs:
   plan:
@@ -60,9 +55,20 @@ jobs:
       firefox: ${{ steps.plan.outputs.firefox }}
       tag: ${{ steps.plan.outputs.tag }}
       build: ${{ steps.plan.outputs.build }}
-      pgo: ${{ steps.plan.outputs.pgo }}
     steps:
+      - name: Only the release branch publishes Hallow
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/release ]; then
+            echo "::error::Stable Hallow releases are built from the release branch only, not $GITHUB_REF."
+            exit 1
+          fi
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: The commit is on the release branch
+        run: |
+          git fetch -q origin release
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/release
       - uses: actions/cache@v4
         with:
           path: |
@@ -75,30 +81,40 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           FORCE: ${{ inputs.force }}
-          PGO_INPUT: ${{ inputs.pgo }}
         run: |
+          unset HALLOW_VERSION_SUFFIX
           version=$(cargo hb version)
+          case "$version" in
+            *[~+]*) echo "::error::$version is not a release version"; exit 1 ;;
+          esac
+          if [ ! -s "$ARCHIVE_KEY" ]; then
+            echo "::error::$ARCHIVE_KEY is missing: a release must carry the update channel's public key. See docs/RELEASING.md."
+            exit 1
+          fi
           tag="v$version"
           build=true
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && [ "$FORCE" != "true" ]; then
+          # A version is released from exactly one commit.
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            tagged=$(git rev-list -n 1 "$tag")
+            if [ "$tagged" != "$GITHUB_SHA" ]; then
+              echo "::error::$tag was released from $tagged. Increase [hallow].revision in hallow.toml for a new release."
+              exit 1
+            fi
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && [ "$FORCE" != true ]; then
             build=false
             echo "::notice::Release $tag already exists. Increase [hallow].revision in hallow.toml to publish a new build."
-          fi
-          pgo=true
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$PGO_INPUT" = false ]; then
-            pgo=false
           fi
           {
             echo "version=$version"
             echo "firefox=$(cargo hb version --firefox)"
             echo "tag=$tag"
             echo "build=$build"
-            echo "pgo=$pgo"
           } >> "$GITHUB_OUTPUT"
 
   pgo-instrumented:
     needs: plan
-    if: needs.plan.outputs.build == 'true' && needs.plan.outputs.pgo == 'true'
+    if: needs.plan.outputs.build == 'true'
     name: PGO 1/3 · instrumented build
     runs-on: ubuntu-24.04
     timeout-minutes: 355
@@ -165,11 +181,7 @@ jobs:
 
   build:
     needs: [plan, pgo-profile]
-    # Runs after the PGO stages, or straight away when PGO is switched off.
-    if: >-
-      always() && needs.plan.outputs.build == 'true' &&
-      (needs.pgo-profile.result == 'success' || needs.plan.outputs.pgo != 'true')
-    name: Build Hallow ${{ needs.plan.outputs.version }}${{ needs.plan.outputs.pgo == 'true' && ' (PGO 3/3)' || '' }}
+    name: Build Hallow ${{ needs.plan.outputs.version }} (PGO 3/3)
     runs-on: ubuntu-24.04
     timeout-minutes: 355
     steps:
@@ -177,17 +189,14 @@ jobs:
       - uses: ./.github/actions/gecko-setup
 
       - name: Check prefs against this Firefox
-        run: cargo hb lint-prefs
+        run: cargo hb lint-prefs --strict
 
-      - name: Download the PGO profile
-        if: needs.plan.outputs.pgo == 'true'
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: pgo-profile
           path: ${{ runner.temp }}/pgo
 
       - name: Use the PGO profile
-        if: needs.plan.outputs.pgo == 'true'
         run: |
           ls -la "$RUNNER_TEMP/pgo"
           echo "HALLOW_PGO=use" >> "$GITHUB_ENV"
@@ -216,27 +225,8 @@ jobs:
       - name: Build .deb
         run: |
           export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
-          cargo hb deb
-
-      - name: Install and launch the package
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q ./dist/hallow_*.deb xvfb imagemagick
-          dpkg -s hallow | head -n 3
-          hallow --version | tee version.txt
-          grep -q "${{ needs.plan.outputs.firefox }}" version.txt
-          ls /usr/lib/hallow/fonts /usr/share/icons/hicolor/512x512/apps/hallow.png
-          bash tools/screenshot.sh /usr/bin/hallow screenshots
-          sudo apt-get remove -y -q hallow
-
-      - name: Print screenshots as base64
-        run: |
-          for png in screenshots/*.png; do
-            convert "$png" -resize 1100x -quality 65 "${png%.png}.jpg"
-            echo "::group::${png%.png}.jpg (base64)"
-            base64 "${png%.png}.jpg"
-            echo "::endgroup::"
-          done
+          cargo hb deb --require-update-channel
+          test "$(dpkg-deb -f dist/hallow_*.deb Version)" = "${{ needs.plan.outputs.version }}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -244,58 +234,156 @@ jobs:
           path: dist/*.deb
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+  test:
+    needs: [plan, build]
+    name: Test the package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
         with:
-          name: screenshots
-          path: screenshots/
+          name: hallow-deb
+          path: dist
+      - name: Install and test
+        run: bash tools/test-package.sh dist/hallow_*.deb results
+      - name: Print screenshots as base64
+        if: always()
+        run: tools/print-screenshots.sh results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: results/
 
   publish:
-    needs: [plan, build]
+    needs: [plan, build, test]
+    name: Publish ${{ needs.plan.outputs.tag }}
     runs-on: ubuntu-24.04
+    # Holds HALLOW_SIGNING_KEY. Restrict its deployment branches to
+    # `release` (Settings > Environments) so no other branch can sign.
+    environment: production
     permissions:
       contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      FIREFOX: ${{ needs.plan.outputs.firefox }}
     steps:
+      - name: Only the release branch publishes Hallow
+        run: test "$GITHUB_REF" = refs/heads/release
+
+      - uses: actions/checkout@v5
+
       - uses: actions/download-artifact@v4
         with:
           name: hallow-deb
           path: dist
 
+      - name: Import the archive signing key
+        env:
+          HALLOW_SIGNING_KEY: ${{ secrets.HALLOW_SIGNING_KEY }}
+        run: |
+          if [ -z "$HALLOW_SIGNING_KEY" ]; then
+            echo "::error::The production environment has no HALLOW_SIGNING_KEY secret. See docs/RELEASING.md."
+            exit 1
+          fi
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          printf '%s\n' "$HALLOW_SIGNING_KEY" | gpg --batch --import
+          # The key must be the one installed Hallows trust (the public key
+          # shipped in the package), or they would reject the update.
+          secret=$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/ {print $10; exit}')
+          public=$(gpg --batch --with-colons --show-keys "$ARCHIVE_KEY" | awk -F: '/^fpr:/ {print $10; exit}')
+          if [ -z "$secret" ] || [ "$secret" != "$public" ]; then
+            echo "::error::HALLOW_SIGNING_KEY ($secret) does not match $ARCHIVE_KEY ($public)."
+            exit 1
+          fi
+          echo "SIGNING_KEY=$secret" >> "$GITHUB_ENV"
+          echo "Signing with $secret"
+
+      - name: Sign the stable update channel
+        run: |
+          sudo apt-get install -y -q apt-utils
+          deb=$(ls dist/*.deb)
+          test "$(dpkg-deb -f "$deb" Version)" = "$VERSION"
+          tools/make-apt-repo.sh "$deb" channel "$SIGNING_KEY"
+          ls -la channel
+
+      - name: Verify the channel the way installed Hallows will
+        run: |
+          # APT, a fresh state directory and only the shipped public key:
+          # the channel must verify and offer exactly this version.
+          state=$(mktemp -d)
+          mkdir -p "$state/lists/partial" "$state/archives/partial" "$state/root/latest"
+          ln -s "$PWD/channel" "$state/root/latest/download"
+          printf 'Types: deb\nURIs: file://%s/root/latest/\nSuites: download/\nSigned-By: %s\n' \
+            "$state" "$PWD/$ARCHIVE_KEY" > "$state/hallow.sources"
+          opts=(-o "Dir::Etc::SourceList=$state/hallow.sources" -o Dir::Etc::SourceParts=-
+                -o "Dir::State::Lists=$state/lists" -o "Dir::Cache=$state" -o Debug::NoLocking=true)
+          apt-get "${opts[@]}" update
+          apt-cache "${opts[@]}" policy hallow | tee "$state/policy"
+          grep -q "Candidate: $VERSION\$" "$state/policy"
+
+      - name: Attest the package's provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*.deb
+
       - name: Publish ${{ needs.plan.outputs.tag }}
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.plan.outputs.tag }}
-          VERSION: ${{ needs.plan.outputs.version }}
-          FIREFOX: ${{ needs.plan.outputs.firefox }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          cd dist
-          sha256sum *.deb > SHA256SUMS
-          deb=$(ls *.deb)
+          deb=$(basename "$(ls dist/*.deb)")
+          (cd channel && sha256sum "$deb" > SHA256SUMS)
           cat > notes.md <<EOF
           Hallow $VERSION, built from the Firefox $FIREFOX source release with
           profile-guided and cross-language link-time optimization.
 
-          ### Install (Debian 12+, Ubuntu 22.04+, amd64)
+          ### Install (Debian 12+, Ubuntu 22.04+, Linux Mint 21+, amd64)
 
           \`\`\`sh
           sudo apt install ./$deb
           \`\`\`
 
-          Then start **Hallow** from your app menu or run \`hallow\`.
+          Installed Hallow keeps itself up to date: it checks this stable
+          channel daily and in *About Hallow*, and installs new versions after
+          you confirm with your password. Your system's update manager offers
+          them too.
+
+          ### Provenance
+
+          - Built from release-branch commit \`$GITHUB_SHA\` by [this workflow run]($RUN_URL).
+          - Update channel signed with key \`$SIGNING_KEY\`.
+          - Verify the package: \`gh attestation verify $deb --repo $GITHUB_REPOSITORY\`
 
           ### SHA-256
 
           \`\`\`
-          $(cat SHA256SUMS)
+          $(cat channel/SHA256SUMS)
           \`\`\`
           EOF
+          assets=(channel/"$deb" channel/SHA256SUMS channel/InRelease channel/Release
+                  channel/Release.gpg channel/Packages channel/Packages.xz)
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$deb" SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit "$TAG" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+            gh release upload "$TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --notes-file notes.md --latest --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" "$deb" SHA256SUMS \
+            # Upload everything to a draft first, so the moment the release
+            # becomes "latest" (and thus the stable channel) it is complete.
+            gh release create "$TAG" "${assets[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "Hallow $VERSION" \
               --notes-file notes.md \
-              --latest
+              --draft
+            gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
           fi
+          # The published tag must point at the commit that was built.
+          git fetch -q origin "refs/tags/$TAG:refs/tags/$TAG"
+          test "$(git rev-list -n 1 "$TAG")" = "$GITHUB_SHA"

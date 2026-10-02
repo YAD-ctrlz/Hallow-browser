@@ -42,7 +42,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Print the Hallow package version (for example `157.0-1`).
+    /// Print the Hallow version (for example `157.0-1`, or `157.0-1~dev42`
+    /// with HALLOW_VERSION_SUFFIX).
     Version {
         /// Print only the upstream Firefox version.
         #[arg(long)]
@@ -75,6 +76,17 @@ enum Command {
         /// Where to write the `.deb`. Defaults to `<root>/dist`.
         #[arg(long)]
         output_dir: Option<PathBuf>,
+        /// Armored public key of the update channel. Defaults to the Hallow
+        /// archive key, packaging/linux/hallow-archive-keyring.asc.
+        #[arg(long)]
+        channel_key: Option<PathBuf>,
+        /// APT repository URI of the update channel. Defaults to Hallow's
+        /// stable channel.
+        #[arg(long, default_value = deb::STABLE_REPOSITORY)]
+        channel_uri: String,
+        /// Fail instead of building a package without an update channel.
+        #[arg(long)]
+        require_update_channel: bool,
     },
     /// Render the Hallow icon set into a directory.
     Icons { out: PathBuf },
@@ -107,7 +119,7 @@ fn main() -> Result<()> {
             if firefox {
                 println!("{}", ctx.config.firefox.version);
             } else {
-                println!("{}", ctx.config.package_version());
+                println!("{}", ctx.version());
             }
             Ok(())
         }
@@ -115,8 +127,29 @@ fn main() -> Result<()> {
         Command::Prepare => branding::prepare(&ctx),
         Command::Build { bootstrap } => mach::build(&ctx, bootstrap),
         Command::Profile { instrumented, out } => mach::profile(&ctx, &instrumented, &out),
-        Command::Deb { input, output_dir } => {
-            let path = deb::run(&ctx, input, output_dir)?;
+        Command::Deb {
+            input,
+            output_dir,
+            channel_key,
+            channel_uri,
+            require_update_channel,
+        } => {
+            let key = channel_key
+                .unwrap_or_else(|| ctx.root.join("packaging/linux/hallow-archive-keyring.asc"));
+            let channel = if key.exists() {
+                Some(deb::UpdateChannel {
+                    key,
+                    uri: channel_uri,
+                })
+            } else if require_update_channel {
+                anyhow::bail!(
+                    "{} is missing; see docs/RELEASING.md to set up the signing key",
+                    key.display()
+                );
+            } else {
+                None
+            };
+            let path = deb::run(&ctx, input, output_dir, channel)?;
             println!("{}", path.display());
             Ok(())
         }

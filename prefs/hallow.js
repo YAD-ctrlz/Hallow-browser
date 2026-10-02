@@ -79,49 +79,43 @@ pref("browser.tabs.groups.smart.userEnabled", false);
 pref("pdfjs.enableGuessAltText", false);
 pref("pdfjs.enableAltTextModelDownload", false);
 
-// Unload background tabs when the system runs low on memory (Firefox only
-// does this on Windows and macOS by default).
+// Let Firefox unload long-inactive background tabs when the system is
+// actually under memory pressure (Firefox's Linux default is never). Nothing
+// is unloaded while memory is plentiful: the trigger is the memory watcher's
+// low-memory signal, and only tabs idle for 10+ minutes are candidates.
 pref("browser.tabs.unloadOnLowMemory", true);
-// Write the session to disk every 60s instead of every 15s.
+// Batch session-restore writes: every 60 s instead of every 15 s, a quarter
+// of the disk writes for the same crash protection of open tabs.
 pref("browser.sessionstore.interval", 60000);
 
 // ---- Speed -------------------------------------------------------------------
-// (The biggest speed-up is in the build: profile-guided + link-time
-// optimization, see mozconfig.) These raise limits Firefox sized for slower
-// networks and machines.
+// Hallow's speed comes from the build (profile-guided and cross-language
+// link-time optimization, see mozconfig), not from pref tweaks: networking,
+// HTTP/2 and HTTP/3, DNS prefetch and preconnect, caches, WebRender, the
+// JavaScript and WebAssembly JITs all run with Firefox's tuned defaults.
 
-// Networking: more parallel connections, no artificial request pacing, and
-// longer-lived DNS and TLS session caches for faster repeat visits.
-pref("network.http.max-connections", 1800);
-pref("network.http.max-persistent-connections-per-server", 10);
-pref("network.http.max-urgent-start-excessive-connections-per-host", 5);
-pref("network.http.pacing.requests.enabled", false);
-pref("network.dnsCacheExpiration", 3600);
-pref("network.ssl_tokens_cache_capacity", 16384);
-// Rendering: paint pages that are still loading sooner (120 ms -> 100 ms),
-// and bigger caches for accelerated canvas, glyphs and image decoding.
-pref("content.notify.interval", 100000);
-pref("gfx.canvas.accelerated.cache-items", 32768);
-pref("gfx.canvas.accelerated.cache-size", 512);
-pref("gfx.content.skia-font-cache-size", 32);
-pref("image.mem.decode_bytes_at_a_time", 32768);
-// Media: buffer further ahead so playback does not stall on busy networks.
-pref("media.memory_cache_max_size", 65536);
-pref("media.cache_readahead_limit", 600);
-pref("media.cache_resume_threshold", 300);
-// Built-in add-ons (new tab page, web compatibility fixes) ship with each
-// Hallow release instead of being swapped out by Mozilla's update channel,
-// which would also drop Hallow's new tab styling.
+// Video: steer streaming sites (Media Source Extensions) towards a codec the
+// GPU decodes, best first: AV1, then VP9, then H.264. AV1 is only offered
+// where it decodes in hardware (in software it is the most CPU-hungry), and
+// VP9 is withheld where it would decode in software while H.264 decodes in
+// hardware. Hardware decoding itself (VA-API on Linux) and its fallback to
+// software stay under Firefox's own driver checks. See patches/0006.
+pref("media.mediasource.prefer-hardware-codecs", true);
+
+// Built-in add-ons (new tab page, web compatibility fixes) are the versions
+// shipped with each Hallow release; Mozilla's system add-on update service
+// only serves Firefox, so asking it daily is pointless background traffic.
+// Web compatibility interventions themselves stay fully enabled.
 pref("extensions.systemAddon.update.enabled", false);
 
-// ---- Rust-first engine features ------------------------------------------------
-
-// WebGPU through wgpu, Mozilla's Rust graphics stack. Enabled in Firefox
-// Nightly and Beta on Linux; Release still has it off.
-pref("dom.webgpu.enabled", true);
-// JPEG XL decoding through jxl-rs, the Rust JPEG XL decoder. Nightly-only
-// in Firefox.
-pref("image.jxl.enabled", true);
+// ---- Updates ------------------------------------------------------------------
+// Hallow updates from its own stable channel, which only release-branch
+// builds reach, never from Mozilla's update servers: Linux packages through
+// the system package manager (LinuxPackageUpdater), checked once a day by
+// Firefox's update timer (app.update.interval) and in About Hallow.
+// Where to go when an update cannot be installed automatically:
+pref("app.update.url.manual", "https://github.com/YAD-ctrlz/Hallow-browser/releases/latest");
+pref("app.update.url.details", "https://github.com/YAD-ctrlz/Hallow-browser/releases");
 
 // ---- Privacy: no telemetry or studies ------------------------------------------
 

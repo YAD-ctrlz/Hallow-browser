@@ -1,0 +1,43 @@
+#!/bin/sh
+# Installs a Hallow update through the system package manager.
+#
+# Hallow runs this as root through pkexec when the user chooses "Update" in
+# the browser (toolkit/mozapps/update/LinuxPackageUpdater.sys.mjs); the
+# polkit policy io.github.yad_ctrlz.Hallow.update asks for an administrator
+# password first. It takes no input besides the fixed verb, so all it can
+# ever do is upgrade the hallow package from the repository configured in
+# /etc/apt/sources.list.d/hallow.sources. APT verifies that repository's
+# signature (Signed-By) and every file's checksum, and never downgrades.
+set -eu
+
+export LC_ALL=C DEBIAN_FRONTEND=noninteractive
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+SOURCES=/etc/apt/sources.list.d/hallow.sources
+
+if [ "$#" -ne 1 ] || [ "$1" != upgrade ]; then
+    echo "usage: hallow-update-helper upgrade" >&2
+    exit 64
+fi
+if [ "$(id -u)" -ne 0 ]; then
+    echo "hallow-update-helper must run as root (through pkexec)" >&2
+    exit 77
+fi
+if [ ! -f "$SOURCES" ]; then
+    echo "Hallow's update source $SOURCES is missing" >&2
+    exit 69
+fi
+
+# Refresh Hallow's repository only, keeping every other source's lists as
+# they are, then upgrade Hallow (with the system's full set of sources, in
+# case a new version needs new dependencies). Wait for other package
+# managers (Update Manager, unattended-upgrades) instead of failing.
+apt-get -q update \
+    -o Dir::Etc::SourceList="$SOURCES" \
+    -o Dir::Etc::SourceParts=- \
+    -o APT::Get::List-Cleanup=0
+apt-get -q -y \
+    -o DPkg::Lock::Timeout=300 \
+    -o Dpkg::Options::=--force-confdef \
+    -o Dpkg::Options::=--force-confold \
+    install --only-upgrade hallow

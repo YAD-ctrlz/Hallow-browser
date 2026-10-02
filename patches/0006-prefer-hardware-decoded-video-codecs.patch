@@ -1,0 +1,93 @@
+Prefer hardware-decoded video codecs for Media Source Extensions
+
+Adds media.mediasource.prefer-hardware-codecs (off by default; Hallow turns
+it on in prefs/hallow.js). When set, MediaSource.isTypeSupported() and
+MediaCapabilities for "media-source" withhold AV1 unless it decodes in
+hardware, and VP9 where it would decode in software while H.264 decodes in
+hardware, so adaptive players (YouTube and others) pick the codec the GPU
+decodes. Platform-neutral: it reads the per-codec gfxVars each platform sets
+from its own hardware probing.
+
+diff --git a/dom/media/mediasource/MediaSource.cpp b/dom/media/mediasource/MediaSource.cpp
+index 172ee9e0e7..6cc3fdd7f5 100644
+--- a/dom/media/mediasource/MediaSource.cpp
++++ b/dom/media/mediasource/MediaSource.cpp
+@@ -13,6 +13,7 @@
+ #include "MediaSourceDemuxer.h"
+ #include "SourceBuffer.h"
+ #include "SourceBufferList.h"
++#include "VideoUtils.h"
+ #include "mozilla/ErrorResult.h"
+ #include "mozilla/FloatingPoint.h"
+ #include "mozilla/Logging.h"
+@@ -75,6 +76,37 @@ static bool IsVP9Forced(DecoderDoctorDiagnostics* aDiagnostics) {
+ #endif
+ }
+ 
++// With media.mediasource.prefer-hardware-codecs, steer adaptive streaming
++// players towards a video codec this system decodes in hardware, best first:
++// AV1, then VP9, then H.264. It relies only on the per-codec hardware decoding
++// state gfxPlatform derives from each platform's own probing, so it needs no
++// platform-specific code.
++// - AV1 is only offered where it decodes in hardware: software AV1 costs the
++//   most CPU per frame, and sites serving AV1 also serve VP9 or H.264.
++// - VP9 is withheld where it would decode in software while H.264 decodes in
++//   hardware (as media.mediasource.vp9.enabled=false does on Android).
++static bool IsWithheldForHardwareDecoding(
++    const MediaCodecs& aCodecs, DecoderDoctorDiagnostics* aDiagnostics) {
++  if (!StaticPrefs::media_mediasource_prefer_hardware_codecs()) {
++    return false;
++  }
++  const bool hwDecoding = gfx::gfxVars::CanUseHardwareVideoDecoding();
++  const bool hwAV1 = hwDecoding && gfx::gfxVars::UseAV1HwDecode();
++  const bool hwVP9 = hwDecoding && gfx::gfxVars::UseVP9HwDecode();
++  const bool hwH264 = hwDecoding && gfx::gfxVars::UseH264HwDecode();
++  for (const auto& codec : aCodecs.Range()) {
++    if (IsAV1CodecString(codec) && !hwAV1) {
++      return true;
++    }
++    if (IsVP9CodecString(codec) && !hwVP9 && hwH264 &&
++        MP4Decoder::IsSupportedType(
++            MediaContainerType(MEDIAMIMETYPE(VIDEO_MP4)), aDiagnostics)) {
++      return true;
++    }
++  }
++  return false;
++}
++
+ namespace dom {
+ 
+ static void RecordTypeForTelemetry(const nsAString& aType,
+@@ -166,6 +198,13 @@ void MediaSource::IsTypeSupported(const nsAString& aType,
+                 "Couldn't drill down ShouldResistFingerprinting",
+                 RFPTarget::MediaCapabilities);
+   const MediaMIMEType& mimeType = containerType->Type();
++  if ((mimeType == MEDIAMIMETYPE("video/mp4") ||
++       mimeType == MEDIAMIMETYPE("video/webm")) &&
++      !shouldResistFingerprinting &&
++      IsWithheldForHardwareDecoding(codecs, aDiagnostics)) {
++    // Like the pref-disabled case below: just act like we can't play it.
++    return aRv.ThrowNotSupportedError("Can't play type");
++  }
+   if (mimeType == MEDIAMIMETYPE("video/mp4") ||
+       mimeType == MEDIAMIMETYPE("audio/mp4")) {
+     if (!StaticPrefs::media_mediasource_vp9_enabled() && hasVP9 &&
+diff --git a/modules/libpref/init/StaticPrefList.yaml b/modules/libpref/init/StaticPrefList.yaml
+index b4ea2261c2..9c1dccee5d 100644
+--- a/modules/libpref/init/StaticPrefList.yaml
++++ b/modules/libpref/init/StaticPrefList.yaml
+@@ -12383,6 +12383,14 @@
+   value: @IS_NOT_MOBILE@
+   mirror: always
+ 
++# Offer Media Source Extensions only video codecs that decode in hardware,
++# best first (AV1, VP9, H.264): AV1 only where it decodes in hardware, and VP9
++# not where it would decode in software while H.264 decodes in hardware.
++- name: media.mediasource.prefer-hardware-codecs
++  type: RelaxedAtomicBool
++  value: false
++  mirror: always
++
+ # Whether to enable MediaSource v2 support.
+ - name: media.mediasource.experimental.enabled
+   type: RelaxedAtomicBool
