@@ -1,0 +1,74 @@
+name: Package tests
+
+# Re-runs the package tests (tools/test-package.sh) against the newest
+# development build of this branch, without rebuilding Gecko: for changes to
+# the tests themselves. Read-only, like every development workflow.
+
+on:
+  push:
+    branches-ignore: [release]
+    paths:
+      - tools/test-package.sh
+      - tools/test_*.py
+      - tools/marionette.py
+      - tools/screenshot.sh
+      - tools/print-screenshots.sh
+      - tools/make-apt-repo.sh
+      - .github/workflows/package-tests.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: package-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Find the newest development build of this branch
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for run in $(gh run list --repo "$GITHUB_REPOSITORY" --workflow build.yml \
+              --branch "$GITHUB_REF_NAME" --limit 30 --json databaseId -q '.[].databaseId'); do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts" \
+                -q '.artifacts[] | select(.name == "hallow-dev-deb" and (.expired | not)) | .id' | grep -q .; then
+              echo "run=$run" >> "$GITHUB_OUTPUT"
+              echo "Testing the package of build run $run"
+              exit 0
+            fi
+          done
+          echo "::error::No development build of $GITHUB_REF_NAME to test"
+          exit 1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: hallow-dev-deb
+          path: dist
+          run-id: ${{ steps.build.outputs.run }}
+          github-token: ${{ github.token }}
+
+      - name: Install and test
+        run: bash tools/test-package.sh dist/hallow_*.deb results
+
+      - name: Print screenshots as base64
+        if: always()
+        run: tools/print-screenshots.sh results
+
+      - name: Summary
+        if: always()
+        run: cat results/summary.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: results/

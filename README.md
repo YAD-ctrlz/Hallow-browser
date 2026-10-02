@@ -155,6 +155,7 @@ signing key setup.
 | --- | --- | --- |
 | `release.yml` | push to `release` only | builds Hallow in three PGO stages, tests the package (install, icons and desktop integration, browser checks, the update mechanism), signs the stable update channel in the `production` environment and publishes `v<version>` as the latest release (about 4 hours) |
 | `build.yml` | push to any other branch, pull requests | LTO build (no PGO) with a `~devN` version and the same package tests; the `.deb` is a CI artifact, never published |
+| `package-tests.yml` | changes to the tests only | runs the package tests against the newest development build, without rebuilding |
 | `upstream.yml` | daily | runs `cargo hb bump` on `development` when Firefox ships a release |
 | `ci.yml` | every push / PR | rustfmt, clippy, unit tests; applies the patches and checks the prefs against the real Firefox source |
 | `ui-preview.yml` | UI or pref changes | screenshots of the official Firefox build with Hallow's prefs and stylesheet |

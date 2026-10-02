@@ -13,7 +13,8 @@ that Hallow
   - finds a newer stable version and installs it from the About dialog
     (pkexec + the update helper + APT), then asks for a restart.
 
-    tools/test_updates.py --deb dist/hallow_X_amd64.deb --out update-test
+    tools/test_updates.py --deb dist/hallow_X_amd64.deb --out results/updates \
+        --work /tmp/update-test
 """
 
 import argparse
@@ -146,6 +147,7 @@ class Browser:
         )
 
     def screenshot(self, name):
+        time.sleep(2)  # let the last change paint
         path = self.shots / f"{name}.png"
         sh("import", "-window", "root", path, check=False)
 
@@ -184,7 +186,8 @@ def wait_panel(browser, panels, timeout=900):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--deb", required=True, type=Path)
-    parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--out", required=True, type=Path, help="screenshots")
+    parser.add_argument("--work", type=Path, help="packages and channels")
     parser.add_argument("--module-dir", help="load LinuxPackageUpdater from here")
     parser.add_argument(
         "--no-ui", action="store_true", help="skip the About dialog (old builds)"
@@ -192,6 +195,7 @@ def main():
     args = parser.parse_args()
 
     out = args.out.resolve()
+    work = (args.work or out / "work").resolve()
     shots = out / "screenshots"
     shots.mkdir(parents=True, exist_ok=True)
     os.environ["GNUPGHOME"] = tempfile.mkdtemp()
@@ -207,12 +211,12 @@ def main():
     public = sh("gpg", "--armor", "--export", stable_key, capture_output=True).stdout
     write_root(KEYRING, public)
 
-    debs = out / "debs"
+    debs = work / "debs"
     next_deb = repack(args.deb, nxt, debs, "next")
     older_deb = repack(args.deb, older, debs, "older")
     evil_deb = repack(args.deb, nxt, debs / "evil", "tampered")
 
-    served = out / "served"
+    served = work / "served"
     shutil.rmtree(served, ignore_errors=True)
     channel = lambda name: served / name / "latest/download"  # noqa: E731
     make_repo(next_deb, channel("stable"), stable_key)
@@ -307,7 +311,7 @@ def main():
                 """
                 Services.wm.getMostRecentWindow("Browser:About")?.close();
                 const win = Services.wm.getMostRecentWindow("navigator:browser");
-                win.openPreferences("paneGeneral");
+                win.openPreferences("paneAbout");
                 const deadline = Date.now() + 30000;
                 for (;;) {
                   const doc = win.gBrowser.selectedBrowser.contentDocument;

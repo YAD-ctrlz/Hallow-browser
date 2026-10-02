@@ -237,8 +237,11 @@ def main():
                         let stats = null;
                         try { stats = player?.getStatsForNerds?.(); } catch (e) {}
                         const q = video?.getVideoPlaybackQuality();
+                        const text = document.body?.innerText ?? "";
                         return {
                           title: document.title,
+                          // YouTube asks datacenter IPs like CI's to sign in.
+                          botCheck: /confirm you.re not a bot/i.test(text),
                           playing: !!video && video.currentTime > 3,
                           currentTime: video?.currentTime ?? null,
                           codecs: stats?.codecs ?? null,
@@ -252,7 +255,12 @@ def main():
                     result = {"error": str(e)}
                 result["url"] = url
                 report["youtube"].append(result)
-                print("youtube:", result, flush=True)
+                status = (
+                    "plays" if result.get("playing")
+                    else "blocked by YouTube's bot check (CI IP)" if result.get("botCheck")
+                    else "did not play"
+                )
+                print(f"INFO YouTube {url}: {status}: {result}", flush=True)
                 screenshot(out, f"youtube-{len(report['youtube'])}")
     finally:
         (out / "report.json").write_text(json.dumps(report, indent=2))

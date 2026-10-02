@@ -250,6 +250,9 @@ jobs:
       - name: Print screenshots as base64
         if: always()
         run: tools/print-screenshots.sh results
+      - name: Summary
+        if: always()
+        run: cat results/summary.md
       - uses: actions/upload-artifact@v4
         if: always()
         with:

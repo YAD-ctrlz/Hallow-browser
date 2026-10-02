@@ -34,6 +34,9 @@
 #communityExperimentalDesc,
 #contributeDesc,
 #contributeDescReferrals,
-.bottom-link:not([href="about:license"]) {
+.bottom-link:not([href="about:license"]),
+/* Firefox's help and feedback links under the update status lead to
+ * Mozilla's support and feedback sites. */
+#updateInfo > .text-blurb:has(#aboutDialogHelpLink) {
   display: none !important;
 }

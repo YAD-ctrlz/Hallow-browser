@@ -7,7 +7,7 @@ set -uo pipefail
 
 find "$1" -name '*.png' -print0 | sort -z | while IFS= read -r -d '' png; do
   jpg=${png%.png}.jpg
-  convert "$png" -resize 1100x -quality 65 "$jpg" || continue
+  convert "$png" -resize 900x -quality 55 "$jpg" || continue
   echo "::group::${png#"$1"/} (base64 jpeg)"
   base64 "$jpg"
   echo "::endgroup::"
