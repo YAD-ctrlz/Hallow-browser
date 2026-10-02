@@ -18,6 +18,9 @@
   background-size: auto 44px;
   margin-inline: 30px;
   padding-top: 64px;
+  /* With the blurbs below hidden, the version line alone would set this
+   * box's width and clip the wordmark (about 180px wide at 44px tall). */
+  min-width: 190px;
 }
 
 #bottomBox {

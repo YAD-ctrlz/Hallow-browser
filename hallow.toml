@@ -9,7 +9,7 @@ sha512 = ""
 
 [hallow]
 # Increase to ship a new Hallow build of the same Firefox version.
-revision = 5
+revision = 6
 
 [package]
 maintainer = "YAD-ctrlz <233045204+YAD-ctrlz@users.noreply.github.com>"
