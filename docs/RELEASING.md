@@ -81,6 +81,8 @@ channels switch to the new version in one step.
    screenshots are in the job logs and the `test-results` /
    `test-results-windows` artifacts; install the `hallow-dev-deb` or
    `hallow-dev-windows` artifact to try a build.
+   To try the release pipeline's Windows PGO stages too (they take a few
+   hours more), put `[pgo]` in the commit message.
 3. When it is ready, merge `development` into `release` (a pull request from
    `development` to `release` is the intended way, see branch protection
    below).
