@@ -15,8 +15,8 @@ name: Windows build
 #     build: an instrumented cross-build, a training run of Mozilla's PGO
 #     corpus on a Windows runner, then the optimized build.
 #
-# Run it by hand (Actions > Windows build > Run workflow) to try the PGO
-# pipeline on a development branch.
+# Development builds try the PGO pipeline too when the commit message
+# contains [pgo] (build.yml).
 
 on:
   workflow_call:
@@ -27,12 +27,6 @@ on:
       pgo:
         type: boolean
         default: false
-  workflow_dispatch:
-    inputs:
-      pgo:
-        description: Profile-guided optimization (three stages)
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -46,8 +40,12 @@ env:
   SCCACHE_CACHE_SIZE: 6G
   HALLOW_TARGET: windows
   HALLOW_VERSION_SUFFIX: ${{ !inputs.release && format('~dev{0}', github.run_number) || '' }}
-  # Artifact names: hallow-windows* for releases, hallow-dev-windows* else.
-  ARTIFACT: ${{ inputs.release && 'hallow-windows' || 'hallow-dev-windows' }}
+  # Artifact names: hallow-windows* for releases, hallow-dev-windows* (or
+  # hallow-dev-windows-pgo*) for development builds.
+  ARTIFACT: ${{ inputs.release && 'hallow-windows' || (inputs.pgo && 'hallow-dev-windows-pgo' || 'hallow-dev-windows') }}
+  # Compiler caches of PGO and plain builds are kept apart: their objects
+  # differ.
+  CACHE: sccache-win-${{ inputs.pgo && 'pgo' || 'lto' }}
 
 jobs:
   pgo-instrumented:
@@ -178,8 +176,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-win-${{ github.run_id }}
-          restore-keys: sccache-win-
+          key: ${{ env.CACHE }}-${{ github.run_id }}
+          restore-keys: ${{ env.CACHE }}-
 
       - name: Cross-compile Gecko for Windows (mach build + package)
         run: cargo hb build --bootstrap
@@ -190,7 +188,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-win-${{ github.run_id }}-${{ github.run_attempt }}
+          key: ${{ env.CACHE }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Installer, zip and update package
         run: cargo hb windows-dist
@@ -252,5 +250,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ inputs.release && 'test-results-windows' || 'test-results-dev-windows' }}
+          name: test-results-${{ env.ARTIFACT }}
           path: results/

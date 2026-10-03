@@ -215,7 +215,7 @@ signing key setup.
 | --- | --- | --- |
 | `release.yml` | push to `release` only | builds Hallow for Linux and Windows (three PGO stages each), tests both (install, icons and desktop integration, browser checks, the update mechanism), signs the stable update channels in the `production` environment, installs the signed Windows update once on a clean machine and then publishes `v<version>` as the latest release (about 4 hours) |
 | `build.yml` | push to any other branch, pull requests | Linux and Windows LTO builds (no PGO) with a `~devN` version and the same tests; the packages are CI artifacts, never published |
-| `windows.yml` | called by `build.yml` and `release.yml`; by hand to try Windows PGO | the Windows build (optionally with PGO) and its tests on a Windows runner |
+| `windows.yml` | called by `build.yml` and `release.yml` | the Windows build (with PGO for releases, and for development builds whose commit message contains `[pgo]`) and its tests on a Windows runner |
 | `package-tests.yml`, `windows-tests.yml` | changes to the tests only | run the Linux or Windows tests against the newest development build, without rebuilding |
 | `upstream.yml` | daily | runs `cargo hb bump` on `development` when Firefox ships a release |
 | `ci.yml` | every push / PR | rustfmt, clippy, unit tests; applies the patches and checks the prefs against the real Firefox source |

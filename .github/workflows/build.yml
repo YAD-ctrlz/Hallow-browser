@@ -146,3 +146,12 @@ jobs:
     uses: ./.github/workflows/windows.yml
     with:
       pgo: false
+
+  # The release pipeline's Windows PGO stages, on request: put [pgo] in the
+  # commit message.
+  windows-pgo:
+    name: Windows PGO
+    if: contains(github.event.head_commit.message, '[pgo]')
+    uses: ./.github/workflows/windows.yml
+    with:
+      pgo: true
