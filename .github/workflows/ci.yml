@@ -60,6 +60,19 @@ jobs:
         run: cargo hb prepare
       - name: Check prefs against Firefox
         run: cargo hb lint-prefs --strict
+      - name: Prepare for Windows too
+        env:
+          HALLOW_TARGET: windows
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=CI" \
+            -keyout "$RUNNER_TEMP/ci.key" -outform DER -out "$RUNNER_TEMP/ci.der" 2>/dev/null
+          HALLOW_UPDATE_CERTS="$RUNNER_TEMP/ci.der" cargo hb prepare
+          src="$HALLOW_WORK_DIR/firefox-$(cargo hb version --firefox)"
+          # The updater trusts the given key, not Mozilla's.
+          cmp "$RUNNER_TEMP/ci.der" "$src/toolkit/mozapps/update/updater/release_primary.der"
+          cmp "$RUNNER_TEMP/ci.der" "$src/toolkit/mozapps/update/updater/release_secondary.der"
+          grep -q 'BrandFullName         "Hallow"' "$src/browser/branding/hallow/branding.nsi"
+          ls -l "$src/browser/fonts"
 
   search-engine:
     name: Startpage endpoints respond

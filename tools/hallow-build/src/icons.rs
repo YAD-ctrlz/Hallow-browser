@@ -7,7 +7,13 @@
 //! App icons therefore use a tighter composition of the same artwork: the
 //! halo rests on the globe and the result fills the canvas with the slim
 //! margins Firefox's own icons use. Below [`HALO_MIN_SIZE`] the halo is a
-//! one-pixel smear, so those sizes show the globe alone.
+//! one-pixel smear, so those sizes show the globe alone, and up to
+//! [`SHARPEN_MAX_SIZE`] the downscaled artwork is sharpened so the
+//! continents stay distinct in panels, title bars and the taskbar.
+//!
+//! The same renderer makes the Linux icon theme and the Windows icons
+//! (`.ico` files with every size Windows asks for at each display scale,
+//! Start menu tiles and the installer's artwork).
 
 use std::fs;
 use std::io::Cursor;
@@ -38,6 +44,26 @@ const ICON_MARGIN: f32 = 0.03;
 
 /// Alpha below which a logo pixel counts as empty when locating its parts.
 const ALPHA_EMPTY: u8 = 16;
+
+/// Largest icon size that is sharpened after downscaling.
+pub const SHARPEN_MAX_SIZE: u32 = 48;
+
+/// Strength of that sharpening (unsharp mask amount).
+const SHARPEN_AMOUNT: f32 = 0.5;
+
+/// Sizes in Hallow's Windows app icon: every size Windows uses for the
+/// taskbar, title bars, Start, Explorer and the desktop at display scales
+/// from 100% to 400% (Microsoft's list for Win32 app icons), so Windows
+/// never has to scale the artwork.
+pub const WINDOWS_ICON_SIZES: [u32; 15] =
+    [16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 128, 256];
+
+/// Sizes of the smaller Windows icons (installer, documents).
+pub const WINDOWS_SMALL_ICON_SIZES: [u32; 7] = [16, 20, 24, 32, 40, 48, 64];
+
+/// Background of Hallow's dark surfaces (About dialog, Start tile,
+/// installer artwork).
+pub const DARK_BACKGROUND: [u8; 3] = [0x12, 0x0c, 0x24];
 
 pub fn load_logo(branding: &Path) -> Result<RgbaImage> {
     let path = branding.join("logo.png");
@@ -111,13 +137,60 @@ pub fn icon_artwork(logo: &RgbaImage, size: u32) -> RgbaImage {
     art
 }
 
-/// PNG app icon of `size`×`size` pixels: [`icon_artwork`] centered with a
-/// slim margin.
-pub fn render_icon(logo: &RgbaImage, size: u32) -> Result<Vec<u8>> {
+/// App icon of `size`×`size` pixels: [`icon_artwork`] centered with a
+/// slim margin, sharpened at small sizes.
+pub fn icon_image(logo: &RgbaImage, size: u32) -> RgbaImage {
     let margin = (size as f32 * ICON_MARGIN).round() as u32;
     let inner = size - 2 * margin;
-    let fitted = resize_premultiplied(&icon_artwork(logo, size), inner, inner);
-    encode_png(&center(&fitted, size, size))
+    let mut fitted = resize_premultiplied(&icon_artwork(logo, size), inner, inner);
+    if size <= SHARPEN_MAX_SIZE {
+        fitted = sharpen(&fitted, SHARPEN_AMOUNT);
+    }
+    center(&fitted, size, size)
+}
+
+/// PNG of [`icon_image`].
+pub fn render_icon(logo: &RgbaImage, size: u32) -> Result<Vec<u8>> {
+    encode_png(&icon_image(logo, size))
+}
+
+/// Unsharp mask on color only: each pixel moves away from the average color
+/// of its visible neighbors. Alpha (the icon's shape) is unchanged, and
+/// transparent neighbors do not darken or lighten the edge.
+fn sharpen(image: &RgbaImage, amount: f32) -> RgbaImage {
+    const KERNEL: [[f32; 3]; 3] = [[1.0, 2.0, 1.0], [2.0, 4.0, 2.0], [1.0, 2.0, 1.0]];
+    let (w, h) = image.dimensions();
+    let mut out = image.clone();
+    for y in 0..h {
+        for x in 0..w {
+            let p = image.get_pixel(x, y);
+            if p[3] == 0 {
+                continue;
+            }
+            let (mut sum, mut weight) = ([0.0f32; 3], 0.0f32);
+            for (dy, row) in KERNEL.iter().enumerate() {
+                for (dx, k) in row.iter().enumerate() {
+                    let (nx, ny) = (x as i64 + dx as i64 - 1, y as i64 + dy as i64 - 1);
+                    if nx < 0 || ny < 0 || nx >= w as i64 || ny >= h as i64 {
+                        continue;
+                    }
+                    let n = image.get_pixel(nx as u32, ny as u32);
+                    let wgt = k * n[3] as f32 / 255.0;
+                    for c in 0..3 {
+                        sum[c] += wgt * n[c] as f32;
+                    }
+                    weight += wgt;
+                }
+            }
+            let q = out.get_pixel_mut(x, y);
+            for c in 0..3 {
+                let average = sum[c] / weight;
+                let v = p[c] as f32 + amount * (p[c] as f32 - average);
+                q[c] = v.round().clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+    out
 }
 
 /// Scalable app icon (`hicolor/scalable/apps`). The logo is raster pixel
@@ -187,14 +260,14 @@ fn resize_premultiplied(image: &RgbaImage, width: u32, height: u32) -> RgbaImage
 }
 
 /// `image` on a transparent `width`×`height` canvas, centered.
-fn center(image: &RgbaImage, width: u32, height: u32) -> RgbaImage {
+pub fn center(image: &RgbaImage, width: u32, height: u32) -> RgbaImage {
     let mut canvas = RgbaImage::new(width, height);
     let (dx, dy) = ((width - image.width()) / 2, (height - image.height()) / 2);
     imageops::replace(&mut canvas, image, dx.into(), dy.into());
     canvas
 }
 
-fn encode_png(image: &RgbaImage) -> Result<Vec<u8>> {
+pub fn encode_png(image: &RgbaImage) -> Result<Vec<u8>> {
     let mut png = Vec::new();
     image
         .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)

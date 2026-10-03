@@ -100,6 +100,24 @@ pub fn validate_version_suffix(suffix: &str) -> Result<()> {
     Ok(())
 }
 
+/// The platform a build is for, from `HALLOW_TARGET` (the mozconfig reads
+/// the same variable).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Target {
+    Linux,
+    Windows,
+}
+
+impl Target {
+    pub fn from_env() -> Result<Self> {
+        match std::env::var("HALLOW_TARGET").as_deref() {
+            Err(_) | Ok("") | Ok("linux") => Ok(Target::Linux),
+            Ok("windows") => Ok(Target::Windows),
+            Ok(other) => bail!("HALLOW_TARGET must be linux or windows, not `{other}`"),
+        }
+    }
+}
+
 /// Numeric key for comparing release versions (`157.0.1` > `157.0`).
 pub fn version_key(version: &str) -> Vec<u64> {
     version.split('.').map(|p| p.parse().unwrap_or(0)).collect()
@@ -114,6 +132,7 @@ pub struct Context {
     /// before the release it precedes, so a development build of 157.0-7
     /// is replaced by the 157.0-7 release.
     pub version_suffix: String,
+    pub target: Target,
 }
 
 impl Context {
@@ -134,6 +153,7 @@ impl Context {
             work,
             config,
             version_suffix,
+            target: Target::from_env()?,
         })
     }
 

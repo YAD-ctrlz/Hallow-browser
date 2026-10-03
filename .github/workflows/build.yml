@@ -1,12 +1,15 @@
 name: Development build
 
-# Builds and tests Hallow from every branch except release, and from pull
-# requests. The packages it makes are CI artifacts for testing only:
+# Builds and tests Hallow for Linux and Windows from every branch except
+# release, and from pull requests. The packages it makes are CI artifacts for
+# testing only:
 #   - the workflow has a read-only token and never uses the `production`
-#     environment, which holds the update channel's signing key, so it
+#     environment, which holds the update channel's signing keys, so it
 #     cannot publish a release or sign Hallow's stable update channel;
 #   - its versions carry a ~dev suffix (157.0-7~dev42), which sorts before
-#     the release they lead up to.
+#     the release they lead up to;
+#   - Windows builds sign their update package with a throwaway key made for
+#     the run and deleted with it; no release build trusts that key.
 # Installed Hallows only ever update from the stable channel, which only the
 # Release workflow publishes, from the release branch.
 # Changes to the tests alone are run by package-tests.yml against the newest
@@ -26,6 +29,7 @@ on:
       - packaging/**
       - tools/hallow-build/**
       - tools/make-apt-repo.sh
+      - tools/make-windows-update-tests.sh
       - Cargo.lock
       - .github/actions/**
       - .github/workflows/build.yml
@@ -41,6 +45,7 @@ on:
       - packaging/**
       - tools/hallow-build/**
       - tools/make-apt-repo.sh
+      - tools/make-windows-update-tests.sh
       - Cargo.lock
       - .github/actions/**
       - .github/workflows/build.yml
@@ -132,4 +137,108 @@ jobs:
         if: always()
         with:
           name: test-results
+          path: results/
+
+  build-windows:
+    name: Build for Windows (LTO, no PGO)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    env:
+      HALLOW_TARGET: windows
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Throwaway update signing key for this run
+        run: |
+          # The updater of this build trusts Hallow's release key (when it
+          # exists) and this key, which signs the run's test updates and is
+          # deleted with the runner.
+          openssl req -x509 -newkey rsa:4096 -nodes -days 30 \
+            -subj "/CN=Hallow development build ${{ github.run_number }}" \
+            -keyout "$RUNNER_TEMP/dev-update.key" \
+            -outform DER -out "$RUNNER_TEMP/dev-update.der" 2>/dev/null
+          certs="$RUNNER_TEMP/dev-update.der"
+          if [ -f packaging/windows/hallow-update-signing.der ]; then
+            certs="$PWD/packaging/windows/hallow-update-signing.der,$certs"
+          fi
+          echo "HALLOW_UPDATE_CERTS=$certs" >> "$GITHUB_ENV"
+
+      - uses: ./.github/actions/gecko-setup
+
+      - name: Restore compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-win-${{ github.run_id }}
+          restore-keys: sccache-win-
+
+      - name: Cross-compile Gecko for Windows (mach build + package)
+        run: cargo hb build --bootstrap
+
+      - name: Save compiler cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-win-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Installer, zip and update package
+        run: cargo hb windows-dist
+
+      - name: Sign the update package and make the update test packages
+        run: |
+          bash tools/make-windows-update-tests.sh dist \
+            "$RUNNER_TEMP/dev-update.key" "$RUNNER_TEMP/dev-update.der" dist/update-tests
+
+      - name: Delete the throwaway key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/dev-update.key"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hallow-dev-windows
+          path: |
+            dist/hallow-*-win64-setup.exe
+            dist/hallow-*-win64.zip
+            dist/hallow-*-win64.complete.mar
+            dist/hallow-*-win64.json
+          retention-days: 14
+          if-no-files-found: error
+          compression-level: 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hallow-dev-windows-update-tests
+          path: dist/update-tests/
+          retention-days: 14
+          if-no-files-found: error
+          compression-level: 0
+
+  test-windows:
+    name: Test on Windows
+    needs: build-windows
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: hallow-dev-windows
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: hallow-dev-windows-update-tests
+          path: dist/update-tests
+      - name: Install and test
+        shell: pwsh
+        run: tools/test-windows.ps1 -Dist dist -Results results
+      - name: Summary
+        if: always()
+        shell: pwsh
+        run: Get-Content results/summary.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-windows
           path: results/

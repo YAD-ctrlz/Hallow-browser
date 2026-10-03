@@ -10,3 +10,8 @@ codegen-units = 16
 # fast even in debug builds.
 [profile.dev.package."*"]
 opt-level = 3
+
+# Icon rendering in the tests is pixel-by-pixel; keep the tool itself
+# reasonably fast in debug builds too.
+[profile.dev]
+opt-level = 1

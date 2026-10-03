@@ -1,7 +1,8 @@
 name: Gecko build setup
 description: >
   Free disk space, add swap, install Mozilla's Rust release and leave a
-  fetched, patched and branded Firefox source tree for building Hallow.
+  fetched, patched and branded Firefox source tree for building Hallow for
+  HALLOW_TARGET (linux, the default, or windows).
   Sets HALLOW_WORK_DIR, MOZBUILD_STATE_PATH and SCCACHE_DIR.
 
 runs:
@@ -34,7 +35,17 @@ runs:
       shell: bash
       run: |
         sudo apt-get update -q && sudo apt-get install -y -q python3-venv
-        rustup toolchain install "$GECKO_RUST" --profile minimal --target wasm32-wasip1
+        targets=wasm32-wasip1
+        if [ "${HALLOW_TARGET:-linux}" = windows ]; then
+          # Windows is cross-compiled like Mozilla's own Windows builds:
+          # bootstrap unpacks Microsoft's SDK and MSVC packages with
+          # msiextract, and Mozilla's Wine (which runs midl.exe for the
+          # accessibility interfaces) needs the 32-bit C runtime.
+          sudo apt-get install -y -q msitools libc6-i386 lib32gcc-s1 \
+            lib32stdc++6 lib32z1
+          targets="$targets,x86_64-pc-windows-msvc"
+        fi
+        rustup toolchain install "$GECKO_RUST" --profile minimal --target "$targets"
         rustup default "$GECKO_RUST"
         rustc --version
 

@@ -254,20 +254,32 @@ pub fn run(
         0o644,
     );
 
-    // Corporate fonts. Gecko adds <app>/fonts to its private fontconfig set,
-    // so they are available to Hallow without being installed system-wide.
+    // Corporate fonts. The build installs them into <app>/fonts
+    // (patches/0010), which Gecko adds to its private fontconfig set, so
+    // they are available to Hallow without being installed system-wide.
+    // Their licenses go with the package's documentation.
     let mut fonts: Vec<PathBuf> = fs::read_dir(branding.join("fonts"))?
         .map(|entry| entry.map(|e| e.path()))
         .collect::<io::Result<_>>()?;
     fonts.sort();
     for font in &fonts {
         let name = font.file_name().unwrap().to_string_lossy();
-        let dest = match font.extension().and_then(|e| e.to_str()) {
-            Some("ttf" | "otf") => format!("{INSTALL_DIR}/fonts/{name}"),
-            Some("txt") => format!("usr/share/doc/hallow/fonts/{name}"),
-            _ => continue,
-        };
-        tree.add_bytes(&dest, fs::read(font)?, 0o644);
+        match font.extension().and_then(|e| e.to_str()) {
+            Some("ttf" | "otf") => {
+                if !app_dir.join("fonts").join(&*name).exists() {
+                    bail!(
+                        "{} has no fonts/{name}; is the build patched?",
+                        app_dir.display()
+                    );
+                }
+            }
+            Some("txt") => tree.add_bytes(
+                &format!("usr/share/doc/hallow/fonts/{name}"),
+                fs::read(font)?,
+                0o644,
+            ),
+            _ => {}
+        }
     }
 
     tree.add_bytes(

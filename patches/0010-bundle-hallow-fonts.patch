@@ -1,0 +1,24 @@
+Bundle Hallow's fonts with the browser
+
+IBM Plex Sans (interface, patches/0004 and 0011) and Space Grotesk (home
+page, patches/0005) ship in <app>/fonts next to Firefox's emoji font, on
+Linux and Windows alike. Gecko loads that directory for itself only, so the
+fonts are not installed system-wide. hallow-build copies the font files from
+branding/fonts into browser/fonts.
+
+diff --git a/browser/fonts/moz.build b/browser/fonts/moz.build
+index 0ebf2de..28eaa08 100644
+--- a/browser/fonts/moz.build
++++ b/browser/fonts/moz.build
+@@ -5,3 +5,11 @@
+ if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("windows", "gtk"):
+     DIST_SUBDIR = ""
+     FINAL_TARGET_FILES.fonts += ["TwemojiMozilla.ttf"]
++    # Hallow's interface font (IBM Plex Sans) and home page font (Space
++    # Grotesk), copied here from branding/fonts by hallow-build. Gecko loads
++    # <app>/fonts for itself only; nothing is installed system-wide.
++    FINAL_TARGET_FILES.fonts += [
++        "IBMPlexSans-Italic-Variable.ttf",
++        "IBMPlexSans-Variable.ttf",
++        "SpaceGrotesk-Variable.ttf",
++    ]

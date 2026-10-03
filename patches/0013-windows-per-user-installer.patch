@@ -1,0 +1,130 @@
+Install per user on Windows, without administrator rights
+
+Hallow installs into %LOCALAPPDATA%\Hallow and registers itself for the
+current user (HKCU), like Firefox does for users without administrator
+rights. Neither the installer nor updates ever show a UAC prompt, and
+updates need no privileged service: Gecko's updater, running as the user,
+can replace the files.
+
+- The installer never asks for elevation; even an elevated installer,
+  uninstaller or post-update helper registers Hallow in HKCU.
+- The installer sends no installation ping to Mozilla's telemetry, and
+  launcher-process telemetry starts disabled.
+- Hallow, not Mozilla, is the publisher shown in Settings > Apps.
+
+diff --git a/browser/installer/windows/nsis/installer.nsi b/browser/installer/windows/nsis/installer.nsi
+index 1e0358a..a4965df 100755
+--- a/browser/installer/windows/nsis/installer.nsi
++++ b/browser/installer/windows/nsis/installer.nsi
+@@ -99,6 +99,14 @@ Var PostSigningData
+ ; The following includes are custom.
+ !include branding.nsi
+ !include defines.nsi
++
++; Hallow installs per user, into %LOCALAPPDATA%\Hallow and registered in
++; HKCU, so neither installing nor updating ever asks for administrator rights.
++; Turn the UAC elevation the shared installer code would request into a no-op.
++!macro HallowNoElevation
++!macroend
++!define ElevateUAC "!insertmacro HallowNoElevation"
++
+ !include common.nsh
+ !include locales.nsi
+ !include installer_helpers.nsh
+@@ -158,11 +166,7 @@ VIAddVersionKey "OriginalFilename" "setup.exe"
+ 
+ Name "${BrandFullName}"
+ OutFile "setup.exe"
+-!ifdef HAVE_64BIT_BUILD
+-  InstallDir "$PROGRAMFILES64\${BrandFullName}\"
+-!else
+-  InstallDir "$PROGRAMFILES32\${BrandFullName}\"
+-!endif
++InstallDir "$LOCALAPPDATA\${BrandFullName}\"
+ ShowInstDetails nevershow
+ 
+ ################################################################################
+@@ -439,7 +443,9 @@ Section "-Application" APP_IDX
+   ${UpdateProtocolHandlers}
+ 
+   ClearErrors
+-  WriteRegStr HKLM "Software\Mozilla" "${BrandShortName}InstallerTest" "Write Test"
++  ; Hallow is registered per user even when this runs elevated: always take
++  ; the HKCU branch.
++  SetErrors
+   ${If} ${Errors}
+     StrCpy $RegHive "HKCU"
+   ${Else}
+@@ -553,7 +559,8 @@ Section "-Application" APP_IDX
+   ; possibility of multiple Firefox profiles owned by the same Windows user), it
+   ; is more accurate than a machine-wide setting, and should be accurate in the
+   ; majority of cases.
+-  WriteRegDWORD HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Telemetry" 1
++  ; Hallow: telemetry is off.
++  WriteRegDWORD HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Telemetry" 0
+ !endif
+ 
+   ${WriteToastNotificationRegistration} $RegHive
+@@ -1027,6 +1034,8 @@ FunctionEnd
+ ; since we'd be double-counting the number of installations. The stub installer
+ ; is repsonsible for sending the ping in that case.
+ Function SendPingIfApplicable
++  ; Hallow sends no telemetry, so the installation ping is never sent.
++  Return
+   ClearErrors
+   ${GetParameters} $0
+   ${GetOptions} $0 "/LaunchedFromStub" $0
+diff --git a/browser/installer/windows/nsis/shared.nsh b/browser/installer/windows/nsis/shared.nsh
+index b81c7ef..bede9ee 100755
+--- a/browser/installer/windows/nsis/shared.nsh
++++ b/browser/installer/windows/nsis/shared.nsh
+@@ -701,7 +701,7 @@ FunctionEnd
+     ${WriteRegStr2} $RegHive "$0" "DisplayName" "${BrandFullNameInternal}$3 (${ARCH} ${AB_CD})" 0
+     ${WriteRegStr2} $RegHive "$0" "HelpLink" "${HelpLink}" 0
+     ${WriteRegStr2} $RegHive "$0" "InstallLocation" "$8" 0
+-    ${WriteRegStr2} $RegHive "$0" "Publisher" "Mozilla" 0
++    ${WriteRegStr2} $RegHive "$0" "Publisher" "${CompanyName}" 0
+     ${WriteRegStr2} $RegHive "$0" "UninstallString" "$\"$8\uninstall\helper.exe$\"" 0
+     DeleteRegValue SHCTX "$0" "URLInfoAbout"
+ ; Don't add URLUpdateInfo which is the release notes url except for the release
+diff --git a/browser/installer/windows/nsis/uninstaller.nsi b/browser/installer/windows/nsis/uninstaller.nsi
+index becbb0f..e3026b0 100755
+--- a/browser/installer/windows/nsis/uninstaller.nsi
++++ b/browser/installer/windows/nsis/uninstaller.nsi
+@@ -484,7 +484,9 @@ Section "Uninstall"
+   DeleteRegValue HKLM "Software\Mozilla\${AppName}\TaskBarIDs" "$INSTDIR"
+ 
+   ClearErrors
+-  WriteRegStr HKLM "Software\Mozilla" "${BrandShortName}InstallerTest" "Write Test"
++  ; Hallow is registered per user even when this runs elevated: always take
++  ; the HKCU branch.
++  SetErrors
+   ${If} ${Errors}
+     StrCpy $RegHive "HKCU"
+   ${Else}
+diff --git a/browser/installer/windows/nsis/uninstaller_helpers.nsh b/browser/installer/windows/nsis/uninstaller_helpers.nsh
+index 039bf5d..98e013d 100644
+--- a/browser/installer/windows/nsis/uninstaller_helpers.nsh
++++ b/browser/installer/windows/nsis/uninstaller_helpers.nsh
+@@ -326,7 +326,9 @@
+ ; some older code unfortunately does. Use SHCTX or $RegHive instead.
+ Function PostUpdateInstallation
+   ClearErrors
+-  WriteRegStr HKLM "Software\Mozilla" "${BrandShortName}InstallerTest" "Write Test"
++  ; Hallow is registered per user even when this runs elevated: always take
++  ; the HKCU branch.
++  SetErrors
+   ${If} ${Errors}
+     SetShellVarContext current  ; Set SHCTX to the current user (e.g. HKCU)
+     StrCpy $RegHive "HKCU"
+@@ -424,7 +426,9 @@ FunctionEnd
+ ; installations.
+ Function PostUpdateCurrentUser
+   ClearErrors
+-  WriteRegStr HKLM "Software\Mozilla" "${BrandShortName}InstallerTest" "Write Test"
++  ; Hallow is registered per user even when this runs elevated: always take
++  ; the HKCU branch.
++  SetErrors
+   ${If} ${Errors}
+     SetShellVarContext current  ; Set SHCTX to the current user (e.g. HKCU)
+     StrCpy $RegHive "HKCU"
