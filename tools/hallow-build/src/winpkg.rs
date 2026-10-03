@@ -87,12 +87,9 @@ pub fn run_dist(ctx: &Context, output_dir: Option<PathBuf>) -> Result<WindowsDis
     let zip = find_one(&dist, &format!("{APP_NAME}-"), ".win64.zip")?;
 
     // `mach package` also makes the NSIS installer for Windows targets
-    // (`make -C windows installer` in toolkit/mozapps/installer/packager.mk).
-    let installer = find_one(
-        &dist.join("install/sea"),
-        &format!("{APP_NAME}-"),
-        ".installer.exe",
-    )?;
+    // (`make -C windows installer` in toolkit/mozapps/installer/packager.mk),
+    // next to the zip: hallow-<version>.en-US.win64.installer.exe.
+    let installer = find_one(&dist, &format!("{APP_NAME}-"), ".installer.exe")?;
 
     let out = output_dir.unwrap_or_else(|| ctx.root.join("dist"));
     fs::create_dir_all(&out)?;
