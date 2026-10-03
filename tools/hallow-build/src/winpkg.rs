@@ -5,7 +5,8 @@
 //!   - `hallow-<version>-win64.complete.mar`, the unsigned complete update
 //!     package (`cargo hb mar sign` signs it), and
 //!   - `hallow-<version>-win64.json`, what the update manifest needs to
-//!     know about the build (version, build ID).
+//!     know about the build (version, build ID), and
+//!   - `windows-icons/`, the icons the build embedded (for the tests).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -141,8 +142,31 @@ pub fn run_dist(ctx: &Context, output_dir: Option<PathBuf>) -> Result<WindowsDis
         bail!("{} has no {APP_NAME}.exe", result.mar.display());
     }
 
+    // The file users download shows Hallow's icon and name
+    // (windows::brand_installer_stubs).
+    let res = crate::pe::read_resources(&fs::read(&installer)?)?;
+    let strings = crate::pe::version_strings(&res)?;
+    let product = strings
+        .iter()
+        .find(|(k, _)| k == "ProductName")
+        .map(|(_, v)| v.as_str());
+    let sizes = crate::pe::icon_group_sizes(&res)?;
+    if product != Some("Hallow") || sizes != crate::icons::WINDOWS_SMALL_ICON_SIZES {
+        bail!(
+            "{} is not branded as Hallow ({product:?}, icon sizes {sizes:?})",
+            installer.display()
+        );
+    }
     fs::copy(&installer, &result.installer)?;
     fs::copy(&zip, &result.zip)?;
+    // The icons the build embedded, for the Windows tests to compare the
+    // executables' icons with.
+    let icons = out.join("windows-icons");
+    fs::create_dir_all(&icons)?;
+    let branding = source.join("browser/branding/hallow");
+    for name in ["firefox.ico", "pbmode.ico", "document.ico", "firefox64.ico"] {
+        fs::copy(branding.join(name), icons.join(name))?;
+    }
     let info = serde_json::json!({
         "version": ctx.version(),
         "appVersion": app_version,

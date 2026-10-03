@@ -188,8 +188,8 @@ jobs:
 
       - name: Sign the update package and make the update test packages
         run: |
-          bash tools/make-windows-update-tests.sh dist \
-            "$RUNNER_TEMP/dev-update.key" "$RUNNER_TEMP/dev-update.der" dist/update-tests
+          bash tools/make-windows-update-tests.sh dist dist/update-tests \
+            "$RUNNER_TEMP/dev-update.key" "$RUNNER_TEMP/dev-update.der"
 
       - name: Delete the throwaway key
         if: always()
@@ -203,6 +203,7 @@ jobs:
             dist/hallow-*-win64.zip
             dist/hallow-*-win64.complete.mar
             dist/hallow-*-win64.json
+            dist/windows-icons/
           retention-days: 14
           if-no-files-found: error
           compression-level: 0

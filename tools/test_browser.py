@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Checks of an installed Hallow, run by CI under Xvfb.
+"""Checks of an installed Hallow, run by CI under Xvfb (Linux) or on a
+Windows runner.
 
 - Startup: timings, and that no Hallow module runs at startup (the update
   check is loaded by Firefox's update timer, long after the first window).
@@ -13,7 +14,8 @@
   navigates to a second one. Network or bot checks can block this from CI,
   so it is reported but does not fail the run.
 
-    tools/test_browser.py --out results/browser [--media DIR] [--youtube]
+    tools/test_browser.py --out results/browser [--binary PATH] [--media DIR]
+        [--youtube]
 """
 
 import argparse
@@ -41,7 +43,15 @@ YOUTUBE = [
 
 
 def screenshot(out, name):
-    subprocess.run(["import", "-window", "root", str(out / f"{name}.png")], check=False)
+    if sys.platform == "win32":
+        try:
+            from PIL import ImageGrab
+
+            ImageGrab.grab().save(out / f"{name}.png")
+        except Exception as e:
+            print(f"screenshot {name} failed: {e}")
+    else:
+        subprocess.run(["import", "-window", "root", str(out / f"{name}.png")], check=False)
 
 
 def make_clips(media):
@@ -65,6 +75,8 @@ def make_clips(media):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--binary", default="/usr/lib/hallow/hallow",
+                        help="the installed Hallow")
     parser.add_argument("--media", type=Path, help="test clips (made if missing)")
     parser.add_argument("--youtube", action="store_true")
     args = parser.parse_args()
@@ -80,7 +92,7 @@ def main():
 
     profile = tempfile.mkdtemp()
     browser = subprocess.Popen(
-        ["/usr/lib/hallow/hallow", "--new-instance", "--profile", profile,
+        [str(args.binary), "--new-instance", "--profile", profile,
          "--marionette", "--remote-allow-system-access", "about:blank"],
         stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
     )

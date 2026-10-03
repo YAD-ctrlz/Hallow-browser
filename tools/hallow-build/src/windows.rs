@@ -10,6 +10,7 @@ use anyhow::{Context as _, Result, bail};
 use image::{Rgba, RgbaImage, imageops};
 
 use crate::icons::{self, DARK_BACKGROUND, WINDOWS_ICON_SIZES, WINDOWS_SMALL_ICON_SIZES};
+use crate::pe;
 use crate::util::write_file;
 
 /// Images at or above this size are stored PNG-compressed in `.ico` files
@@ -37,8 +38,9 @@ pub fn install_branding(logo: &RgbaImage, dest: &Path, source: &Path) -> Result<
             .collect();
         ico(&images)
     };
-    // Icon of the stub installer and of the full installer (setup.ico):
-    // bitmaps only, as NSIS has always required.
+    // The installer's and updater's icon (setup.ico, also stamped on the
+    // self-extractor users download, see brand_installer_stubs): the sizes
+    // Explorer and the installer windows use.
     let installer_icon = small(&|s| icons::icon_image(logo, s))?;
     write_file(&dest.join("firefox64.ico"), &installer_icon)?;
     write_file(
@@ -96,6 +98,38 @@ pub fn install_branding(logo: &RgbaImage, dest: &Path, source: &Path) -> Result<
         &dest.join("wizHeaderRTL.bmp"),
         bmp(&installer_header(logo, true)),
     )?;
+    Ok(())
+}
+
+/// The self-extractor stub Firefox's x64 installer is wrapped in: the file
+/// users download is the stub followed by the installer. (Windows on Arm
+/// builds, which Hallow does not make, use 7zSD.ARM64.sfx.)
+const INSTALLER_STUBS: [&str; 1] = ["other-licenses/7zstub/firefox/7zSD.Win32.sfx"];
+
+/// Give the installer users download Hallow's icon and name: rewrite the
+/// icon and version strings of the self-extractor stubs (which carry
+/// Firefox's setup icon and "Firefox" / "Mozilla"). Explorer, the Downloads
+/// folder and Windows' security prompts show these.
+pub fn brand_installer_stubs(source: &Path, version: &str) -> Result<()> {
+    let icon = fs::read(source.join("toolkit/mozapps/installer/windows/nsis/setup.ico"))?;
+    for stub in INSTALLER_STUBS {
+        let path = source.join(stub);
+        let file = fs::read(&path).with_context(|| format!("reading {stub}"))?;
+        let mut res = pe::read_resources(&file).with_context(|| format!("reading {stub}"))?;
+        pe::replace_icons(&mut res, &icon)?;
+        pe::set_version_strings(
+            &mut res,
+            &[
+                ("CompanyName", "Hallow"),
+                ("FileDescription", "Hallow Setup"),
+                ("ProductName", "Hallow"),
+                ("ProductVersion", version),
+                ("LegalCopyright", "Hallow and Mozilla developers; MPL 2.0"),
+            ],
+        )?;
+        fs::write(&path, pe::write_resources(&file, &res)?)?;
+        eprintln!("branded {stub}");
+    }
     Ok(())
 }
 
@@ -517,5 +551,49 @@ mod tests {
         assert_eq!(fs::read(dir.join("release_primary.der")).unwrap(), fake);
         assert_eq!(fs::read(dir.join("release_secondary.der")).unwrap(), fake);
         fs::remove_dir_all(&tmp).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod stub_tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    /// Run against a real Firefox tree:
+    /// HALLOW_TEST_FIREFOX=<tree> cargo test -p hallow-build -- --ignored stubs
+    #[test]
+    #[ignore]
+    fn brands_the_real_installer_stubs() {
+        let tree = PathBuf::from(std::env::var("HALLOW_TEST_FIREFOX").unwrap());
+        let tmp = std::env::temp_dir().join(format!("hallow-stubs-{}", std::process::id()));
+        for stub in INSTALLER_STUBS {
+            let dest = tmp.join(stub);
+            fs::create_dir_all(dest.parent().unwrap()).unwrap();
+            fs::copy(tree.join(stub), &dest).unwrap();
+        }
+        let logo = icons::load_logo(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../branding"))
+            .unwrap();
+        let images: Vec<RgbaImage> = WINDOWS_SMALL_ICON_SIZES
+            .iter()
+            .map(|&s| icons::icon_image(&logo, s))
+            .collect();
+        write_file(
+            &tmp.join("toolkit/mozapps/installer/windows/nsis/setup.ico"),
+            ico(&images).unwrap(),
+        )
+        .unwrap();
+        brand_installer_stubs(&tmp, "157.0-8").unwrap();
+        for stub in INSTALLER_STUBS {
+            let out = fs::read(tmp.join(stub)).unwrap();
+            let res = pe::read_resources(&out).unwrap();
+            let strings = pe::version_strings(&res).unwrap();
+            assert!(
+                strings.contains(&("ProductName".into(), "Hallow".into())),
+                "{strings:?}"
+            );
+            println!("{stub}: {} bytes, {strings:?}", out.len());
+        }
+        println!("{}", tmp.display());
     }
 }

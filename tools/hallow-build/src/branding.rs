@@ -6,7 +6,8 @@
 //!    overlaid with `branding/overlay` (and `branding/windows`), icons
 //!    rendered from `branding/logo.png`, the clean-UI stylesheet and
 //!    Hallow's default prefs; add Hallow's fonts to `browser/fonts`.
-//! 3. Install the certificates Gecko's updater trusts (Windows updates).
+//! 3. Install the certificates Gecko's updater trusts and brand the Windows
+//!    installer's self-extractor (Windows).
 //! 4. Set the displayed version to the Hallow version and install the
 //!    mozconfig.
 
@@ -50,6 +51,7 @@ pub fn prepare(ctx: &Context) -> Result<()> {
     install_fonts(&ctx.root.join("branding/fonts"), &source)?;
     install_update_certificates(ctx, &source)?;
     install_version(&ctx.version(), &source)?;
+    windows::brand_installer_stubs(&source, &ctx.version())?;
     install_mozconfig(&ctx.root, &source)?;
     eprintln!("prepared {}", source.display());
     Ok(())

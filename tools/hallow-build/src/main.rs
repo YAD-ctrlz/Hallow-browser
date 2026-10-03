@@ -14,6 +14,7 @@ mod icons;
 mod mach;
 mod mar;
 mod net;
+mod pe;
 mod prefs;
 mod preview;
 mod upstream;
