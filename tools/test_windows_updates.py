@@ -363,14 +363,14 @@ def main():
         ]:
             set_manifest(offers)
             result = browser.run(CHECK_AND_INSTALL, [60000])
-            expect(f"not offered: {name}",
+            expect(f"does not offer {name}",
                    result["checkSucceeded"] and not result["offered"], result)
 
         # --- Packages that must be refused by the updater -----------------------
         # The updater's error codes (toolkit/mozapps/update/common/updatererrors.h).
         for mar, why, code in [
             ("rogue", "signed with another key", 19),  # CERT_VERIFY_ERROR
-            ("unsigned", "not signed", 19),
+            ("unsigned", "that is not signed", 19),
             ("tampered", "changed after signing", 19),
             ("wrong-channel", "for Firefox's update channel", 22),  # MAR_CHANNEL_MISMATCH_ERROR
             ("downgrade", "for an older Firefox version", 23),  # VERSION_DOWNGRADE_ERROR
@@ -388,7 +388,7 @@ def main():
                 and not (result["ready"] or {}).get("state", "").startswith("applied")
                 and not marker.exists()
             )
-            expect(f"refused: package {why}", refused and code in errors,
+            expect(f"refuses a package {why}", refused and code in errors,
                    {k: v for k, v in result.items() if k != "updaterLog"})
             print(result["updaterLog"])
 

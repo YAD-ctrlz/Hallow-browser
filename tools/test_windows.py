@@ -573,6 +573,13 @@ def stage_ui(r, dist, out):
     profile = Path(os.environ["RUNNER_TEMP"] if "RUNNER_TEMP" in os.environ else
                    os.environ["TEMP"]) / "hallow-ui-profile"
     profile.mkdir(exist_ok=True)
+    # What a user sees on a first start, not Marionette's automation defaults
+    # (blank home and new tab pages). Update checks stay off here; the
+    # updates stage tests them against a local server.
+    (profile / "user.js").write_text(
+        'user_pref("remote.prefs.recommended", false);\n'
+        'user_pref("app.update.disabledForTesting", true);\n'
+    )
     proc = subprocess.Popen([EXE, "-no-remote", "-profile", profile, "--marionette",
                              "--remote-allow-system-access"])
     m = Marionette(timeout=180)
@@ -617,7 +624,6 @@ def stage_ui(r, dist, out):
         r.expect("About Hallow shows the Hallow version",
                  json.loads(next(dist.glob("hallow-*-win64.json")).read_text())["version"]
                  in about["version"], about)
-        screenshot(out, "about")
         m.run(
             """
             Services.wm.getMostRecentWindow("Browser:About").close();
