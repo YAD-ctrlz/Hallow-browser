@@ -47,7 +47,8 @@ development (tested)  ──merge──>  release
                                     │    └─ GitHub release v<version> as a draft
                                     ├─ verify-windows-update: a Windows runner installs this build
                                     │        and updates it with the signed package, from the About dialog
-                                    └─ go-live (environment: production): the release → latest
+                                    └─ go-live (environment: production): the release → latest,
+                                                │  then fetch both channels through their public URLs
                                                 │
                      installed Hallows ◄────────┘  daily check / About Hallow / system update manager
 ```
@@ -68,7 +69,9 @@ The stable channel is the latest GitHub release, read at
 
 The release is created as a draft, completed, its Windows update installed
 once on a clean machine, and only then published and marked latest, so the
-channels switch to the new version in one step.
+channels switch to the new version in one step. go-live then reads both
+channels the way installed Hallows do (the update manifest and the package it
+offers, the APT index) and fails if either does not serve the new version.
 
 ## Shipping a new version
 
