@@ -245,15 +245,6 @@ def shell_icon(path, size):
     from PIL import Image
 
     user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
-    hicon = wintypes.HICON()
-    icon_id = wintypes.UINT()
-    user32.PrivateExtractIconsW.argtypes = [
-        wintypes.LPCWSTR, ctypes.c_int, ctypes.c_int, ctypes.c_int,
-        ctypes.POINTER(wintypes.HICON), ctypes.POINTER(wintypes.UINT),
-        wintypes.UINT, wintypes.UINT]
-    if user32.PrivateExtractIconsW(str(path), 0, size, size, ctypes.byref(hicon),
-                                   ctypes.byref(icon_id), 1, 0) != 1:
-        return None
 
     class ICONINFO(ctypes.Structure):
         _fields_ = [("fIcon", wintypes.BOOL), ("xHotspot", wintypes.DWORD),
@@ -268,8 +259,32 @@ def shell_icon(path, size):
                     ("biYPelsPerMeter", wintypes.LONG), ("biClrUsed", wintypes.DWORD),
                     ("biClrImportant", wintypes.DWORD)]
 
+    # Handles are pointer-sized: without these, ctypes would cut them to ints.
+    user32.PrivateExtractIconsW.argtypes = [
+        wintypes.LPCWSTR, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ctypes.POINTER(wintypes.HICON), ctypes.POINTER(wintypes.UINT),
+        wintypes.UINT, wintypes.UINT]
+    user32.PrivateExtractIconsW.restype = wintypes.UINT
+    user32.GetIconInfo.argtypes = [wintypes.HICON, ctypes.POINTER(ICONINFO)]
+    user32.GetIconInfo.restype = wintypes.BOOL
+    user32.GetDC.argtypes = [wintypes.HWND]
+    user32.GetDC.restype = wintypes.HDC
+    user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+    user32.DestroyIcon.argtypes = [wintypes.HICON]
+    gdi32.GetDIBits.argtypes = [
+        wintypes.HDC, wintypes.HBITMAP, wintypes.UINT, wintypes.UINT,
+        ctypes.c_void_p, ctypes.POINTER(BITMAPINFOHEADER), wintypes.UINT]
+    gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+
+    hicon = wintypes.HICON()
+    icon_id = wintypes.UINT()
+    if user32.PrivateExtractIconsW(str(path), 0, size, size, ctypes.byref(hicon),
+                                   ctypes.byref(icon_id), 1, 0) != 1 or not hicon:
+        return None
     info = ICONINFO()
-    user32.GetIconInfo(hicon, ctypes.byref(info))
+    if not user32.GetIconInfo(hicon, ctypes.byref(info)) or not info.hbmColor:
+        user32.DestroyIcon(hicon)
+        return None
     header = BITMAPINFOHEADER(40, size, -size, 1, 32, 0, 0, 0, 0, 0, 0)
     buf = ctypes.create_string_buffer(size * size * 4)
     dc = user32.GetDC(None)
