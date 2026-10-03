@@ -530,3 +530,26 @@ jobs:
           # The published tag must point at the commit that was built.
           git fetch -q origin "refs/tags/$TAG:refs/tags/$TAG"
           test "$(git rev-list -n 1 "$TAG")" = "$GITHUB_SHA"
+
+      - name: The stable channels serve ${{ needs.plan.outputs.tag }}
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          # Through the same public URLs installed Hallows use (GitHub's
+          # latest-release redirects), as anyone on the internet sees them.
+          base="https://github.com/$GITHUB_REPOSITORY/releases/latest/download"
+          get() { curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors "$@"; }
+          # Windows: the update manifest, and the package it offers.
+          get "$base/update-win64.xml" -o update.xml
+          cat update.xml
+          grep -q "displayVersion=\"$VERSION\"" update.xml
+          read -r url size hash < <(python3 -c '
+          import xml.etree.ElementTree as ET
+          p = ET.parse("update.xml").find("update/patch")
+          print(p.get("URL"), p.get("size"), p.get("hashValue"))')
+          get "$url" -o update.mar
+          test "$(stat -c %s update.mar)" = "$size"
+          test "$(sha512sum update.mar | cut -d' ' -f1)" = "$hash"
+          # Linux: the APT repository lists this version.
+          get "$base/Packages" | grep -qx "Version: $VERSION"
+          echo "Both stable channels offer Hallow $VERSION."
