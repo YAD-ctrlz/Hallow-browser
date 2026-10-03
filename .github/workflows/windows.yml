@@ -231,6 +231,9 @@ jobs:
 
   test:
     needs: build
+    # Explicit: without PGO the build's own needs are skipped, which would
+    # skip this job too.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     name: Test on Windows
     runs-on: windows-2025
     timeout-minutes: 90
