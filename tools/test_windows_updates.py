@@ -339,6 +339,20 @@ def main():
     marker = install / "update-test-marker.txt"
     browser = Browser(exe, profile)
     try:
+        # --- Updates while Hallow is closed -------------------------------------
+        # The background update task may update this per-user installation
+        # (prefs/hallow.js); Firefox's own reasons not to would show here.
+        reasons = browser.run(
+            """
+            const { BackgroundUpdate } = ChromeUtils.importESModule(
+              "resource://gre/modules/BackgroundUpdate.sys.mjs");
+            return await BackgroundUpdate._reasonsToNotUpdateInstallation();
+            """
+        )
+        expect("the background update task may update Hallow while it is closed",
+               not any("maintenance service" in r or "not writable" in r for r in reasons),
+               reasons)
+
         # --- Updates that must not be offered ---------------------------------
         for name, offers in [
             ("an older build of this version", [offer(plain, build_id=older_id)]),

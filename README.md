@@ -74,7 +74,9 @@ SmartScreen; they are verified with Hallow's own signing key instead.
 Hallow keeps itself up to date: it checks its stable channel daily and
 whenever you open *Help > About Hallow*, downloads a new version in the
 background and switches to it the next time Hallow starts (or right away
-with *Restart to update*).
+with *Restart to update*). While Hallow is closed, a scheduled task
+(*Hallow Background Update*) does the same, so Hallow usually starts
+already up to date.
 
 ### Linux
 

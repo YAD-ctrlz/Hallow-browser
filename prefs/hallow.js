@@ -123,6 +123,12 @@ pref("app.update.url.details", "https://github.com/YAD-ctrlz/Hallow-browser/rele
 // Settings > Appearance offers alternative app icons on Windows, all of them
 // Firefox logos; Hallow keeps its own.
 pref("browser.shell.customIcon.enabled", false);
+// Hallow installs per user, without Mozilla's maintenance service, so its
+// files are the user's own. This lets Firefox's background update task (a
+// scheduled task, "Hallow Background Update") also update Hallow while it is
+// closed, with the same signed packages and checks as updates from inside
+// the browser. Without it, updates only download while Hallow runs.
+pref("app.update.background.allowUpdatesForUnelevatedInstallations", true);
 
 // ---- Privacy: no telemetry or studies ------------------------------------------
 

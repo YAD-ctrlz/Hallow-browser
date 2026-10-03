@@ -9,6 +9,8 @@ the .zip, .complete.mar, .json, windows-icons/ and update-tests/. Stages:
   install       silent install, per user, without administrator rights
   contents      the installed files (updater, update channel, fonts, tiles)
   registration  Settings > Apps entry, browser registration, shortcuts (HKCU)
+  profile       the first start makes Hallow's own profile, apart from Firefox's,
+                which schedules the background update task
   icons         the icons in hallow.exe, the installer and the shortcuts are
                 Hallow's, at every size Windows uses; how Windows draws them
   browser       tools/test_browser.py against the installed Hallow
@@ -415,6 +417,71 @@ def stage_registration(r, dist):
                  lnk.exists() and target.lower() == str(EXE).lower(), f"{lnk}: {target} {icon}")
 
 
+def scheduled_tasks():
+    return run(["schtasks", "/query", "/fo", "csv", "/nh"], capture_output=True).stdout
+
+
+def stage_profile(r, dist, out):
+    from marionette import Marionette
+
+    root = Path(os.environ["APPDATA"]) / "Mozilla"
+    firefox = root / "Firefox" / "profiles.ini"
+    before = firefox.read_bytes() if firefox.exists() else None
+    # A first start without -profile, as from the Start menu (headless: it
+    # takes a screenshot and quits).
+    shot = Path(os.environ["TEMP"]) / "hallow-first-start.png"
+    proc = run([EXE, "--headless", "--screenshot", shot, "about:blank"], timeout=300,
+               capture_output=True)
+    subprocess.run(["taskkill", "/F", "/T", "/IM", "hallow.exe"], capture_output=True)
+    profiles = root / "Hallow" / "profiles.ini"
+    r.expect("the first start makes a profile in %APPDATA%\\Mozilla\\Hallow",
+             profiles.exists(), f"exit {proc.returncode}: {proc.stderr[-500:]}")
+    r.expect("Firefox's profiles are left alone",
+             (firefox.read_bytes() if firefox.exists() else None) == before)
+    # This installation's default profile ([Install<hash>] Default=...).
+    default = next((v["Default"] for k, v in ini(profiles).items()
+                    if k.startswith("Install") and v.get("Default")), None) \
+        if profiles.exists() else None
+    r.expect("Hallow has its own default profile", default is not None,
+             profiles.read_text(errors="replace") if profiles.exists() else "")
+    if default is None:
+        return
+
+    # The default profile schedules the background update task, which
+    # updates Hallow while it is closed (prefs/hallow.js).
+    profile = root / "Hallow" / default
+    user_js = profile / "user.js"
+    # Marionette turns off updates unless told not to.
+    user_js.write_text('user_pref("remote.prefs.recommended", false);\n')
+    proc = subprocess.Popen([EXE, "--marionette", "--remote-allow-system-access",
+                             "about:blank"])
+    try:
+        m = Marionette(timeout=180)
+        m.chrome()
+        result = m.run(
+            """
+            const { BackgroundUpdate } = ChromeUtils.importESModule(
+              "resource://gre/modules/BackgroundUpdate.sys.mjs");
+            return {
+              scheduled: await BackgroundUpdate.maybeScheduleBackgroundUpdateTask(),
+              reasons: [...await BackgroundUpdate._reasonsToNotUpdateInstallation(),
+                        ...await BackgroundUpdate._reasonsToNotScheduleUpdates()],
+            };
+            """
+        )
+        m.quit()
+    finally:
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            pass
+        subprocess.run(["taskkill", "/F", "/T", "/IM", "hallow.exe"], capture_output=True)
+        user_js.unlink(missing_ok=True)
+    tasks = [line for line in scheduled_tasks().splitlines() if "Hallow Background Update" in line]
+    r.expect("Hallow schedules its background update task",
+             result["scheduled"] and len(tasks) == 1, {**result, "tasks": tasks})
+
+
 def expected_icons(dist, out):
     """The .ico files the build rendered (uploaded with it), or, for builds
     that did not upload them, rendered again by this checkout's hallow-build."""
@@ -610,6 +677,8 @@ def stage_uninstall(r, dist, out):
     desktop = Path(os.environ["USERPROFILE"]) / "Desktop" / "Hallow.lnk"
     start = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/Hallow.lnk"
     r.expect("shortcuts removed", not desktop.exists() and not start.exists())
+    tasks = [line for line in scheduled_tasks().splitlines() if "Hallow" in line]
+    r.expect("background update task removed", not tasks, tasks)
     left = [str(p.relative_to(INSTALL)) for p in INSTALL.rglob("*")] if INSTALL.exists() else []
     r.expect("program files removed", not any(p.endswith(".exe") or p.endswith(".dll")
                                               for p in left), left[:20])
@@ -619,6 +688,7 @@ STAGES = {
     "install": stage_install,
     "contents": stage_contents,
     "registration": stage_registration,
+    "profile": stage_profile,
     "icons": stage_icons,
     "browser": stage_browser,
     "ui": stage_ui,
