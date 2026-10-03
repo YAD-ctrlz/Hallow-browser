@@ -71,6 +71,15 @@ enum Command {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Merge raw profiles of a training run made elsewhere (Windows) for a
+    /// HALLOW_PGO=use build.
+    PgoMerge {
+        /// Directory with the .profraw files.
+        raw: PathBuf,
+        /// Where to write merged.profdata.
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Turn the packaged browser into a Debian package.
     Deb {
         /// Staged app directory or `.tar.xz` from `mach package`.
@@ -250,6 +259,7 @@ fn main() -> Result<()> {
         Command::Prepare => branding::prepare(&ctx),
         Command::Build { bootstrap } => mach::build(&ctx, bootstrap),
         Command::Profile { instrumented, out } => mach::profile(&ctx, &instrumented, &out),
+        Command::PgoMerge { raw, out } => mach::pgo_merge(&ctx, &raw, &out),
         Command::Deb {
             input,
             output_dir,

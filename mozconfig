@@ -25,9 +25,9 @@ ac_add_options --enable-lto=cross
 # --- Speed: profile-guided optimization ------------------------------------
 # Release builds are compiled three times like Firefox's own: an instrumented
 # build, a training run of Mozilla's PGO corpus (Speedometer, layout and
-# style benchmarks), and the final build optimized with that profile across
-# C++ and Rust. The release workflow sets HALLOW_PGO for each stage; local
-# builds without it are plain LTO builds.
+# style benchmarks) on the target platform, and the final build optimized
+# with that profile across C++ and Rust. The release workflow sets
+# HALLOW_PGO for each stage; local builds without it are plain LTO builds.
 case "$HALLOW_PGO" in
 generate)
   ac_add_options --enable-profile-generate=cross
@@ -35,7 +35,11 @@ generate)
 use)
   ac_add_options --enable-profile-use=cross
   ac_add_options --with-pgo-profile-path="$HALLOW_PGO_DIR/merged.profdata"
-  ac_add_options --with-pgo-jarlog="$HALLOW_PGO_DIR/en-US.log"
+  # The omni.ja access order recorded during training, when the training
+  # run's paths match this build's (Linux).
+  if [ -s "$HALLOW_PGO_DIR/en-US.log" ]; then
+    ac_add_options --with-pgo-jarlog="$HALLOW_PGO_DIR/en-US.log"
+  fi
   ;;
 esac
 

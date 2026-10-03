@@ -1,0 +1,256 @@
+name: Windows build
+
+# Builds and tests Hallow for Windows; called by build.yml (development
+# builds) and release.yml (releases). Windows builds are cross-compiled on
+# Linux like Firefox's own, then installed and tested on a Windows runner.
+#
+#   - Development builds (release: false): ~devN version; the updater trusts
+#     Hallow's release key and a throwaway key made for the run, which signs
+#     the run's update package and the update test packages and is deleted
+#     with the runner.
+#   - Releases (release: true): the updater trusts only Hallow's release key
+#     (packaging/windows/hallow-update-signing.der). The update package is
+#     left unsigned here; release.yml signs it in the production environment.
+#   - With pgo: true, profile-guided optimization like the Linux release
+#     build: an instrumented cross-build, a training run of Mozilla's PGO
+#     corpus on a Windows runner, then the optimized build.
+#
+# Run it by hand (Actions > Windows build > Run workflow) to try the PGO
+# pipeline on a development branch.
+
+on:
+  workflow_call:
+    inputs:
+      release:
+        type: boolean
+        default: false
+      pgo:
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      pgo:
+        description: Profile-guided optimization (three stages)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # The Rust release Mozilla builds this Gecko with
+  # (taskcluster/kinds/toolchain/rust.yml in the Firefox source).
+  GECKO_RUST: "1.95.0"
+  HALLOW_SCCACHE: "1"
+  SCCACHE_CACHE_SIZE: 6G
+  HALLOW_TARGET: windows
+  HALLOW_VERSION_SUFFIX: ${{ !inputs.release && format('~dev{0}', github.run_number) || '' }}
+  # Artifact names: hallow-windows* for releases, hallow-dev-windows* else.
+  ARTIFACT: ${{ inputs.release && 'hallow-windows' || 'hallow-dev-windows' }}
+
+jobs:
+  pgo-instrumented:
+    if: inputs.pgo
+    name: Windows PGO 1/3 · instrumented build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    env:
+      HALLOW_PGO: generate
+    steps:
+      - uses: actions/checkout@v5
+      - name: Update signing certificate
+        if: ${{ !inputs.release }}
+        run: |
+          # Instrumented builds are never installed; any certificate will do
+          # for development runs without the release certificate.
+          if [ ! -f packaging/windows/hallow-update-signing.der ]; then
+            openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=unused" \
+              -keyout /dev/null -outform DER -out "$RUNNER_TEMP/unused.der" 2>/dev/null
+            echo "HALLOW_UPDATE_CERTS=$RUNNER_TEMP/unused.der" >> "$GITHUB_ENV"
+          fi
+      - uses: ./.github/actions/gecko-setup
+
+      - name: Restore compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-win-instr-${{ github.run_id }}
+          restore-keys: sccache-win-instr-
+
+      - name: Cross-compile instrumented Gecko for Windows
+        run: cargo hb build --bootstrap
+
+      - name: Save compiler cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-win-instr-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Collect the instrumented build and the training kit
+        run: |
+          src="$HALLOW_WORK_DIR/firefox-$(cargo hb version --firefox)"
+          mkdir -p pgo
+          cp "$src"/obj-hallow/dist/hallow-*.win64.zip pgo/instrumented.zip
+          bash tools/pgo-kit.sh "$src" pgo/kit.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}-pgo-instrumented
+          path: pgo/
+          retention-days: 3
+          if-no-files-found: error
+          compression-level: 0
+
+  pgo-profile:
+    needs: pgo-instrumented
+    name: Windows PGO 2/3 · training run on Windows
+    runs-on: windows-2025
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}-pgo-instrumented
+          path: pgo
+      - name: Run Mozilla's PGO corpus
+        shell: pwsh
+        run: python tools/pgo_windows.py --kit pgo/kit.tar.gz --build pgo/instrumented.zip --out profile
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}-pgo-profile
+          path: profile/*.profraw
+          retention-days: 3
+          if-no-files-found: error
+
+  build:
+    needs: pgo-profile
+    # Runs after the training run, or right away without PGO.
+    if: ${{ !cancelled() && (needs.pgo-profile.result == 'success' || !inputs.pgo) }}
+    name: Build for Windows (${{ inputs.pgo && 'PGO 3/3, LTO' || 'LTO, no PGO' }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Throwaway update signing key for this run
+        if: ${{ !inputs.release }}
+        run: |
+          # The updater of this build trusts Hallow's release key (when it
+          # exists) and this key, which signs the run's test updates and is
+          # deleted with the runner.
+          openssl req -x509 -newkey rsa:4096 -nodes -days 30 \
+            -subj "/CN=Hallow development build ${{ github.run_number }}" \
+            -keyout "$RUNNER_TEMP/dev-update.key" \
+            -outform DER -out "$RUNNER_TEMP/dev-update.der" 2>/dev/null
+          certs="$RUNNER_TEMP/dev-update.der"
+          if [ -f packaging/windows/hallow-update-signing.der ]; then
+            certs="$PWD/packaging/windows/hallow-update-signing.der,$certs"
+          fi
+          echo "HALLOW_UPDATE_CERTS=$certs" >> "$GITHUB_ENV"
+
+      - uses: ./.github/actions/gecko-setup
+
+      - name: The updater trusts only Hallow's update signing key
+        if: inputs.release
+        run: |
+          cert=packaging/windows/hallow-update-signing.der
+          src="$HALLOW_WORK_DIR/firefox-$(cargo hb version --firefox)"
+          cmp "$cert" "$src/toolkit/mozapps/update/updater/release_primary.der"
+          cmp "$cert" "$src/toolkit/mozapps/update/updater/release_secondary.der"
+
+      - uses: actions/download-artifact@v4
+        if: inputs.pgo
+        with:
+          name: ${{ env.ARTIFACT }}-pgo-profile
+          path: ${{ runner.temp }}/profraw
+
+      - name: Use the PGO profile
+        if: inputs.pgo
+        run: |
+          cargo hb pgo-merge "$RUNNER_TEMP/profraw" --out "$RUNNER_TEMP/pgo"
+          echo "HALLOW_PGO=use" >> "$GITHUB_ENV"
+          echo "HALLOW_PGO_DIR=$RUNNER_TEMP/pgo" >> "$GITHUB_ENV"
+
+      - name: Restore compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-win-${{ github.run_id }}
+          restore-keys: sccache-win-
+
+      - name: Cross-compile Gecko for Windows (mach build + package)
+        run: cargo hb build --bootstrap
+
+      - name: Save compiler cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-win-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Installer, zip and update package
+        run: cargo hb windows-dist
+
+      - name: Update test packages
+        run: |
+          if [ -f "$RUNNER_TEMP/dev-update.key" ]; then
+            # Also signs this build's own update package with the run's key.
+            bash tools/make-windows-update-tests.sh dist dist/update-tests \
+              "$RUNNER_TEMP/dev-update.key" "$RUNNER_TEMP/dev-update.der"
+          else
+            # Release: only packages that must be refused.
+            bash tools/make-windows-update-tests.sh dist dist/update-tests
+          fi
+
+      - name: Delete the throwaway key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/dev-update.key"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: |
+            dist/hallow-*-win64-setup.exe
+            dist/hallow-*-win64.zip
+            dist/hallow-*-win64.complete.mar
+            dist/hallow-*-win64.json
+            dist/windows-icons/
+          retention-days: 14
+          if-no-files-found: error
+          compression-level: 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}-update-tests
+          path: dist/update-tests/
+          retention-days: 14
+          if-no-files-found: error
+          compression-level: 0
+
+  test:
+    needs: build
+    name: Test on Windows
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}-update-tests
+          path: dist/update-tests
+      - name: Install and test
+        shell: pwsh
+        run: tools/test-windows.ps1 -Dist dist -Results results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ inputs.release && 'test-results-windows' || 'test-results-dev-windows' }}
+          path: results/

@@ -14,10 +14,11 @@ on the [Releases page](https://github.com/YAD-ctrlz/Hallow-browser/releases).
 - **Clean UI.** Compact toolbars, a full-width address bar and no Firefox View,
   account or bookmarks-bar clutter. The new tab page has no sponsored tiles,
   stories or weather. No onboarding tours, promos or "what's new" pages.
-- **Fast.** Compiled the way Mozilla compiles Firefox releases: link-time
-  optimization across the Rust/C++ boundary, Rust at `opt-level=2`, release
-  configuration, and on Linux profile-guided optimization (trained on
-  Mozilla's PGO corpus: Speedometer, layout and style benchmarks). Everything else (networking, HTTP/2
+- **Fast.** Compiled the way Mozilla compiles Firefox releases:
+  profile-guided optimization (trained on Mozilla's PGO corpus: Speedometer,
+  layout and style benchmarks, on each platform), link-time optimization
+  across the Rust/C++ boundary, Rust at `opt-level=2`, release
+  configuration. Everything else (networking, HTTP/2
   and HTTP/3, caches, WebRender, the JavaScript and WebAssembly JITs) runs
   with Firefox's tuned defaults rather than unmeasured pref tweaks.
 - **Efficient video.** Hardware video decoding (VA-API on Linux, D3D11 on
@@ -153,7 +154,7 @@ its signing model. What differs per platform is small and kept apart:
 | Updates installed by | APT from a signed repository (`LinuxPackageUpdater`, pkexec helper) | Gecko's updater from MAR packages signed with Hallow's key (`mar.rs`) |
 | Icons | hicolor theme, window icons (`icons.rs`) | `.ico` with every Windows size, tiles, installer art (`windows.rs`) |
 | Interface font hook | `patches/0004` (GTK) | `patches/0011` |
-| Optimization | PGO + LTO | LTO |
+| PGO training run | Linux runner (Xvfb) | Windows runner (`tools/pgo_windows.py`) |
 
 Platform features (VA-API and D3D11 video, window identity, icon lookup)
 come from Firefox's own platform layers, which Hallow configures rather
@@ -184,7 +185,9 @@ Other commands:
   packages; `cargo hb update-xml` writes the update manifest offering one.
 - `cargo hb profile <instrumented.tar.xz> --out <dir>` runs the PGO training
   corpus with an instrumented build (`HALLOW_PGO=generate`); building with
-  `HALLOW_PGO=use HALLOW_PGO_DIR=<dir>` then applies the profile.
+  `HALLOW_PGO=use HALLOW_PGO_DIR=<dir>` then applies the profile. For
+  Windows, `tools/pgo_windows.py` runs the training on Windows (with the kit
+  from `tools/pgo-kit.sh`) and `cargo hb pgo-merge` merges its raw profiles.
 
 ### Building locally
 
@@ -210,8 +213,9 @@ signing key setup.
 
 | Workflow | When | What |
 | --- | --- | --- |
-| `release.yml` | push to `release` only | builds Hallow for Linux (three PGO stages) and Windows, tests both (install, icons and desktop integration, browser checks, the update mechanism), signs the stable update channels in the `production` environment, installs the signed Windows update once on a clean machine and then publishes `v<version>` as the latest release (about 4 hours) |
+| `release.yml` | push to `release` only | builds Hallow for Linux and Windows (three PGO stages each), tests both (install, icons and desktop integration, browser checks, the update mechanism), signs the stable update channels in the `production` environment, installs the signed Windows update once on a clean machine and then publishes `v<version>` as the latest release (about 4 hours) |
 | `build.yml` | push to any other branch, pull requests | Linux and Windows LTO builds (no PGO) with a `~devN` version and the same tests; the packages are CI artifacts, never published |
+| `windows.yml` | called by `build.yml` and `release.yml`; by hand to try Windows PGO | the Windows build (optionally with PGO) and its tests on a Windows runner |
 | `package-tests.yml`, `windows-tests.yml` | changes to the tests only | run the Linux or Windows tests against the newest development build, without rebuilding |
 | `upstream.yml` | daily | runs `cargo hb bump` on `development` when Firefox ships a release |
 | `ci.yml` | every push / PR | rustfmt, clippy, unit tests; applies the patches and checks the prefs against the real Firefox source |
@@ -231,8 +235,6 @@ Firefox release, increase `[hallow].revision` in `hallow.toml`.
 - The Windows installer and executables are not Authenticode-signed (see
   [Install](#windows)). For the same reason Mozilla's maintenance service is
   not used: Hallow installs per user, which needs no privileged service.
-- Windows builds are not yet profile-guided (PGO's training run has to
-  happen on Windows); Linux builds are.
 
 ## License
 

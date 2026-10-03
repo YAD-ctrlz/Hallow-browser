@@ -5,8 +5,8 @@ name: Release
 # built, tested and published here, and nothing else ever is.
 #
 #   release branch commit
-#   -> Linux: PGO + LTO build (three stages, like Firefox's own release
-#      builds); Windows: LTO build, cross-compiled
+#   -> PGO + LTO builds (three stages, like Firefox's own release builds)
+#      for Linux and Windows (cross-compiled, trained on a Windows runner)
 #   -> tests of both (install, desktop integration, icons, browser checks,
 #      updates)
 #   -> the `production` environment: sign Hallow's stable update channels
@@ -270,99 +270,17 @@ jobs:
           name: test-results
           path: results/
 
-  build-windows:
+  windows:
     needs: plan
     if: needs.plan.outputs.build == 'true'
-    name: Build Hallow ${{ needs.plan.outputs.version }} for Windows
-    runs-on: ubuntu-24.04
-    timeout-minutes: 355
-    env:
-      HALLOW_TARGET: windows
-    steps:
-      - uses: actions/checkout@v5
-      # No HALLOW_UPDATE_CERTS: the updater trusts Hallow's update signing
-      # key ($UPDATE_CERT) and nothing else.
-      - uses: ./.github/actions/gecko-setup
-
-      - name: The updater trusts only Hallow's update signing key
-        run: |
-          src="$HALLOW_WORK_DIR/firefox-$(cargo hb version --firefox)"
-          cmp "$UPDATE_CERT" "$src/toolkit/mozapps/update/updater/release_primary.der"
-          cmp "$UPDATE_CERT" "$src/toolkit/mozapps/update/updater/release_secondary.der"
-
-      - name: Restore compiler cache
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-win-${{ needs.plan.outputs.firefox }}-${{ github.run_id }}
-          restore-keys: |
-            sccache-win-${{ needs.plan.outputs.firefox }}-
-            sccache-win-
-
-      - name: Cross-compile Gecko for Windows (mach build + package)
-        run: cargo hb build --bootstrap
-
-      - name: Save compiler cache
-        if: always()
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-win-${{ needs.plan.outputs.firefox }}-${{ github.run_id }}-${{ github.run_attempt }}
-
-      - name: Installer, zip and update package
-        run: |
-          cargo hb windows-dist
-          test "$(jq -r .version dist/hallow-*-win64.json)" = "${{ needs.plan.outputs.version }}"
-
-      - name: Update test packages (packages that must be refused)
-        run: bash tools/make-windows-update-tests.sh dist dist/update-tests
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: hallow-windows
-          path: |
-            dist/hallow-*-win64-setup.exe
-            dist/hallow-*-win64.zip
-            dist/hallow-*-win64.complete.mar
-            dist/hallow-*-win64.json
-            dist/windows-icons/
-          if-no-files-found: error
-          compression-level: 0
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: hallow-windows-update-tests
-          path: dist/update-tests/
-          if-no-files-found: error
-          compression-level: 0
-
-  test-windows:
-    needs: [plan, build-windows]
-    name: Test on Windows
-    runs-on: windows-2025
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
-        with:
-          name: hallow-windows
-          path: dist
-      - uses: actions/download-artifact@v4
-        with:
-          name: hallow-windows-update-tests
-          path: dist/update-tests
-      - name: Install and test
-        shell: pwsh
-        run: tools/test-windows.ps1 -Dist dist -Results results
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-results-windows
-          path: results/
+    name: Windows
+    uses: ./.github/workflows/windows.yml
+    with:
+      release: true
+      pgo: true
 
   publish:
-    needs: [plan, build, test, build-windows, test-windows]
+    needs: [plan, build, test, windows]
     name: Sign and stage ${{ needs.plan.outputs.tag }}
     runs-on: ubuntu-24.04
     # Holds HALLOW_SIGNING_KEY and HALLOW_MAR_SIGNING_KEY. Restrict its
@@ -508,8 +426,7 @@ jobs:
           (cd channel && sha256sum "$deb" "$setup" "$winzip" "$mar" > SHA256SUMS)
           cat > notes.md <<EOF
           Hallow $VERSION, built from the Firefox $FIREFOX source release with
-          cross-language link-time optimization (and profile-guided
-          optimization on Linux).
+          profile-guided and cross-language link-time optimization.
 
           ### Install on Windows 10 and 11 (64-bit)
 

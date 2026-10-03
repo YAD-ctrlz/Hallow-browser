@@ -31,7 +31,8 @@ development (tested)  ──merge──>  release
                                     ├─ plan: release branch only, version not yet released,
                                     │        archive public key and update certificate present
                                     ├─ Linux: PGO 1/3 instrumented → 2/3 training → 3/3 optimized build
-                                    ├─ Windows: cross-compiled LTO build (installer, zip, update package)
+                                    ├─ Windows (windows.yml): the same three stages, cross-compiled,
+                                    │        trained on a Windows runner; installer, zip, update package
                                     ├─ test (Linux): install the .deb on a clean runner, desktop
                                     │        integration, browser checks, built-in update mechanism
                                     ├─ test (Windows): install, files, registration, icons, browser
@@ -83,8 +84,9 @@ channels switch to the new version in one step.
 3. When it is ready, merge `development` into `release` (a pull request from
    `development` to `release` is the intended way, see branch protection
    below).
-4. The Release workflow builds that commit (Linux with PGO, about 4 hours;
-   Windows alongside), tests both and publishes `v<version>`. Installed
+4. The Release workflow builds that commit with PGO for Linux and Windows
+   (about 4 to 5 hours, in parallel), tests both and publishes
+   `v<version>`. Installed
    Hallows offer the update within a day, or right away from *Help > About
    Hallow*.
 
