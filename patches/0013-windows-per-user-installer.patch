@@ -9,7 +9,9 @@ can replace the files.
 - The installer never asks for elevation; even an elevated installer,
   uninstaller or post-update helper registers Hallow in HKCU.
 - The installer sends no installation ping to Mozilla's telemetry, and
-  launcher-process telemetry starts disabled.
+  launcher-process telemetry starts disabled; the uninstaller sends no
+  uninstall ping and offers neither Mozilla's uninstall survey nor
+  Firefox's profile refresh (which links to Mozilla's support site).
 - Hallow, not Mozilla, is the publisher shown in Settings > Apps.
 
 diff --git a/browser/installer/windows/nsis/installer.nsi b/browser/installer/windows/nsis/installer.nsi
@@ -88,10 +90,31 @@ index b81c7ef..bede9ee 100755
      DeleteRegValue SHCTX "$0" "URLInfoAbout"
  ; Don't add URLUpdateInfo which is the release notes url except for the release
 diff --git a/browser/installer/windows/nsis/uninstaller.nsi b/browser/installer/windows/nsis/uninstaller.nsi
-index becbb0f..e3026b0 100755
+index becbb0f..54d2534 100755
 --- a/browser/installer/windows/nsis/uninstaller.nsi
 +++ b/browser/installer/windows/nsis/uninstaller.nsi
-@@ -484,7 +484,9 @@ Section "Uninstall"
+@@ -199,10 +199,7 @@ UninstPage custom un.preConfirm
+ !insertmacro MUI_UNPAGE_INSTFILES
+ 
+ ; Finish Page
+-!define MUI_FINISHPAGE_SHOWREADME
+-!define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
+-!define MUI_FINISHPAGE_SHOWREADME_TEXT $(UN_SURVEY_CHECKBOX_LABEL)
+-!define MUI_FINISHPAGE_SHOWREADME_FUNCTION un.Survey
++; Hallow: no checkbox for Mozilla's uninstall survey.
+ !define MUI_PAGE_CUSTOMFUNCTION_PRE un.preFinish
+ !define MUI_PAGE_CUSTOMFUNCTION_SHOW un.showFinish
+ !insertmacro MUI_UNPAGE_FINISH
+@@ -328,6 +325,8 @@ Function un.OpenRefreshHelpURL
+ FunctionEnd
+ 
+ Function un.SendUninstallPing
++  ; Hallow sends no telemetry, so the uninstall ping is never sent.
++  Return
+   ; Notably, we only check the non-private AUMID here. There's no good reason
+   ; to send the uninstall ping twice.
+   ${If} $AppUserModelID == ""
+@@ -484,7 +483,9 @@ Section "Uninstall"
    DeleteRegValue HKLM "Software\Mozilla\${AppName}\TaskBarIDs" "$INSTDIR"
  
    ClearErrors
@@ -102,6 +125,22 @@ index becbb0f..e3026b0 100755
    ${If} ${Errors}
      StrCpy $RegHive "HKCU"
    ${Else}
+@@ -1073,12 +1074,11 @@ Function un.onInit
+   Pop $1
+   GetFullPathName $1 $1
+ 
+-  ; If there is an existing default profile, offer profile refresh.
++  ; Hallow does not offer Firefox's profile refresh here (it links to
++  ; Mozilla's support site); Settings > Help > More troubleshooting
++  ; information still has it.
+   StrCpy $ShouldPromptForRefresh "0"
+   StrCpy $RefreshRequested "0"
+-  ${If} $1 != ""
+-    StrCpy $ShouldPromptForRefresh "1"
+-  ${EndIf}
+ 
+   ; Load version info for uninstall ping (sent after uninstall is complete)
+   ReadINIStr $InstalledVersion "$INSTDIR\application.ini" "App" "Version"
 diff --git a/browser/installer/windows/nsis/uninstaller_helpers.nsh b/browser/installer/windows/nsis/uninstaller_helpers.nsh
 index 039bf5d..98e013d 100644
 --- a/browser/installer/windows/nsis/uninstaller_helpers.nsh
