@@ -1,0 +1,27 @@
+Hallow as the company in hallow.exe's file properties
+
+Explorer's file properties and Task Manager show the executables'
+CompanyName. Hallow is built from Firefox but not by Mozilla, so its
+executables name Hallow; the copyright and trademark lines, which credit
+Firefox and Mozilla, stay.
+
+diff --git a/browser/app/module.ver b/browser/app/module.ver
+index 5ef8d2a..9d7bc60 100644
+--- a/browser/app/module.ver
++++ b/browser/app/module.ver
+@@ -1,4 +1,4 @@
+-WIN32_MODULE_COMPANYNAME=Mozilla Corporation
++WIN32_MODULE_COMPANYNAME=Hallow
+ WIN32_MODULE_COPYRIGHT=©Firefox and Mozilla Developers; available under the MPL 2 license.
+ WIN32_MODULE_PRODUCTVERSION=@MOZ_APP_WINVERSION@
+ WIN32_MODULE_PRODUCTVERSION_STRING=@MOZ_APP_VERSION@
+diff --git a/browser/app/pbproxy/module.ver b/browser/app/pbproxy/module.ver
+index 5ef8d2a..9d7bc60 100644
+--- a/browser/app/pbproxy/module.ver
++++ b/browser/app/pbproxy/module.ver
+@@ -1,4 +1,4 @@
+-WIN32_MODULE_COMPANYNAME=Mozilla Corporation
++WIN32_MODULE_COMPANYNAME=Hallow
+ WIN32_MODULE_COPYRIGHT=©Firefox and Mozilla Developers; available under the MPL 2 license.
+ WIN32_MODULE_PRODUCTVERSION=@MOZ_APP_WINVERSION@
+ WIN32_MODULE_PRODUCTVERSION_STRING=@MOZ_APP_VERSION@

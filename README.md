@@ -124,6 +124,7 @@ patches/           small source patches, applied strictly (no fuzz):
                    0005 Space Grotesk home page 0012 no older or non-HTTPS updates
                    0006 hardware codec choice   0013 per-user Windows installer
                    0007 package updates in UI   0014 Windows Start tile
+                                                0015 Hallow in file properties
 gecko/             files Hallow adds to the Firefox tree (copied by
                    `cargo hb prepare`): LinuxPackageUpdater, the Linux
                    backend of the update UI

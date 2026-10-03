@@ -183,6 +183,23 @@ def icon_groups(path):
     return groups, icons
 
 
+def version_strings(path):
+    """The version strings (CompanyName, ProductName, ...) of a PE file."""
+    import pefile
+
+    pe = pefile.PE(str(path), fast_load=True)
+    pe.parse_data_directories(
+        directories=[pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_RESOURCE"]]
+    )
+    strings = {}
+    for info in getattr(pe, "FileInfo", [[]])[0] if getattr(pe, "FileInfo", None) else []:
+        for table in getattr(info, "StringTable", []):
+            strings.update({k.decode(errors="replace"): v.decode(errors="replace")
+                            for k, v in table.entries.items()})
+    pe.close()
+    return strings
+
+
 def decode_icon_image(data):
     """A PIL image of one RT_ICON resource (PNG or 32-bit DIB)."""
     import io
@@ -418,6 +435,13 @@ def stage_icons(r, dist, out):
     s_groups, s_icons = icon_groups(setup)
     sizes = sorted(s for g in s_groups.values() for s, _ in g)
     r.expect("the installer has Hallow's icon", sizes == SMALL_ICON_SIZES, sizes)
+
+    # File properties (Explorer, Task Manager, Windows' download prompts).
+    for name, path in [("hallow.exe", EXE), ("the installer", setup)]:
+        props = version_strings(path)
+        r.expect(f"{name} is Hallow's in its file properties",
+                 props.get("ProductName") == "Hallow" and props.get("CompanyName") == "Hallow",
+                 props)
 
     # How Windows draws them: the shell picks and scales the icon for each
     # size, as for the taskbar, title bars, Start and Explorer.
