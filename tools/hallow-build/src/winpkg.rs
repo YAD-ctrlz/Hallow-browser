@@ -86,8 +86,8 @@ pub fn run_dist(ctx: &Context, output_dir: Option<PathBuf>) -> Result<WindowsDis
     let build_id = ini_value(&ini, "BuildID").context("application.ini has no BuildID")?;
     let zip = find_one(&dist, &format!("{APP_NAME}-"), ".win64.zip")?;
 
-    // The NSIS installer, from the files `mach package` staged.
-    mach(&source, &["build", "installer"])?;
+    // `mach package` also makes the NSIS installer for Windows targets
+    // (`make -C windows installer` in toolkit/mozapps/installer/packager.mk).
     let installer = find_one(
         &dist.join("install/sea"),
         &format!("{APP_NAME}-"),
