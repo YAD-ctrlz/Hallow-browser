@@ -72,6 +72,7 @@ jobs:
           cmp "$RUNNER_TEMP/ci.der" "$src/toolkit/mozapps/update/updater/release_primary.der"
           cmp "$RUNNER_TEMP/ci.der" "$src/toolkit/mozapps/update/updater/release_secondary.der"
           grep -q 'BrandFullName         "Hallow"' "$src/browser/branding/hallow/branding.nsi"
+          test -f "$src/browser/branding/hallow/hallow.VisualElementsManifest.xml"
           ls -l "$src/browser/fonts"
 
   search-engine:

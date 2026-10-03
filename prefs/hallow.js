@@ -111,11 +111,18 @@ pref("extensions.systemAddon.update.enabled", false);
 // ---- Updates ------------------------------------------------------------------
 // Hallow updates from its own stable channel, which only release-branch
 // builds reach, never from Mozilla's update servers: Linux packages through
-// the system package manager (LinuxPackageUpdater), checked once a day by
-// Firefox's update timer (app.update.interval) and in About Hallow.
+// the system package manager (LinuxPackageUpdater), Windows installs through
+// Gecko's updater with MAR packages signed by Hallow (patches/0008, 0012).
+// Both are checked by Firefox's update timer (app.update.interval) and in
+// About Hallow.
 // Where to go when an update cannot be installed automatically:
 pref("app.update.url.manual", "https://github.com/YAD-ctrlz/Hallow-browser/releases/latest");
 pref("app.update.url.details", "https://github.com/YAD-ctrlz/Hallow-browser/releases");
+
+// ---- Windows --------------------------------------------------------------------
+// Settings > Appearance offers alternative app icons on Windows, all of them
+// Firefox logos; Hallow keeps its own.
+pref("browser.shell.customIcon.enabled", false);
 
 // ---- Privacy: no telemetry or studies ------------------------------------------
 
