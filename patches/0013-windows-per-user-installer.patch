@@ -12,8 +12,20 @@ can replace the files.
   launcher-process telemetry starts disabled; the uninstaller sends no
   uninstall ping and offers neither Mozilla's uninstall survey nor
   Firefox's profile refresh (which links to Mozilla's support site).
-- Hallow, not Mozilla, is the publisher shown in Settings > Apps.
+- Hallow, not Mozilla, is the publisher shown in Settings > Apps, and the
+  self-extractor's window is titled Hallow (app.tag).
 
+diff --git a/browser/installer/windows/app.tag b/browser/installer/windows/app.tag
+index 479d9f7..3bd7d7e 100644
+--- a/browser/installer/windows/app.tag
++++ b/browser/installer/windows/app.tag
+@@ -1,4 +1,4 @@
+ ;!@Install@!UTF-8!
+-Title="Mozilla Firefox"
++Title="Hallow"
+ RunProgram="setup.exe"
+ ;!@InstallEnd@!
+\ No newline at end of file
 diff --git a/browser/installer/windows/nsis/installer.nsi b/browser/installer/windows/nsis/installer.nsi
 index 1e0358a..a4965df 100755
 --- a/browser/installer/windows/nsis/installer.nsi
