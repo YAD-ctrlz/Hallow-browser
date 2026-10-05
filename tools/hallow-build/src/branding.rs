@@ -1,10 +1,15 @@
 //! `hallow-build prepare`: turn a pristine Firefox tree into a Hallow tree.
 //!
-//! 1. Apply `patches/*.patch` (strictly, no fuzz).
+//! 1. Add Hallow's own source files (`gecko/`, new files only) and apply
+//!    `patches/*.patch` (strictly, no fuzz) for changes to Firefox's files.
 //! 2. Create `browser/branding/hallow` from Mozilla's unofficial branding,
-//!    overlaid with `branding/overlay`, icons rendered from `branding/logo.svg`,
-//!    the clean-UI stylesheet and Hallow's default prefs.
-//! 3. Install the mozconfig.
+//!    overlaid with `branding/overlay` (and `branding/windows`), icons
+//!    rendered from `branding/logo.png`, the clean-UI stylesheet and
+//!    Hallow's default prefs; add Hallow's fonts to `browser/fonts`.
+//! 3. Install the certificates Gecko's updater trusts and brand the Windows
+//!    installer's self-extractor (Windows).
+//! 4. Set the displayed version to the Hallow version and install the
+//!    mozconfig.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,11 +17,16 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context as _, Result, bail};
 
-use crate::config::Context;
+use crate::config::{Context, Target};
 use crate::icons;
 use crate::util::{copy_dir, write_file};
+use crate::windows;
 
 const BRANDING_DIR: &str = "browser/branding/hallow";
+
+/// Certificate of Hallow's update signing key: the updater of Windows
+/// release builds only installs MAR packages signed with it.
+pub const UPDATE_CERTIFICATE: &str = "packaging/windows/hallow-update-signing.der";
 
 /// Firefox mascot artwork in toolkit/themes/shared/illustrations.
 const KIT_ILLUSTRATIONS: [&str; 5] = [
@@ -35,11 +45,126 @@ pub fn prepare(ctx: &Context) -> Result<()> {
             source.display()
         );
     }
+    install_gecko_files(&ctx.root.join("gecko"), &source)?;
     apply_patches(&ctx.root.join("patches"), &source)?;
     install_branding(&ctx.root, &source)?;
+    install_fonts(&ctx.root.join("branding/fonts"), &source)?;
+    install_update_certificates(ctx, &source)?;
+    install_version(&ctx.version(), &source)?;
+    windows::brand_installer_stubs(&source, &ctx.version())?;
     install_mozconfig(&ctx.root, &source)?;
     eprintln!("prepared {}", source.display());
     Ok(())
+}
+
+/// Copy the files under `gecko/` to the same paths in the Firefox tree.
+/// They are files Hallow adds, which patches then hook up (moz.build
+/// entries etc.); keeping them as plain files keeps them easy to edit.
+/// Upstream must not have a file of the same name: that would mean
+/// Firefox gained a file we would silently replace.
+pub fn install_gecko_files(dir: &Path, source: &Path) -> Result<()> {
+    let marker = source.join(".hallow-gecko-files");
+    let installed: Vec<String> = fs::read_to_string(&marker)
+        .map(|s| s.lines().map(str::to_owned).collect())
+        .unwrap_or_default();
+    let mut files = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for entry in fs::read_dir(&d).with_context(|| format!("reading {}", d.display()))? {
+            let path = entry?.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    let mut names = Vec::new();
+    for file in files {
+        let relative = file.strip_prefix(dir)?.to_string_lossy().into_owned();
+        let dest = source.join(&relative);
+        if dest.exists() && !installed.contains(&relative) {
+            bail!("gecko/{relative} would replace a Firefox file of the same name");
+        }
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(&file, &dest).with_context(|| format!("copying gecko/{relative}"))?;
+        eprintln!("added {relative}");
+        names.push(relative);
+    }
+    fs::write(marker, names.join("\n"))?;
+    Ok(())
+}
+
+/// Show the Hallow version (`157.0-7`) wherever Firefox shows its display
+/// version (About dialog, Settings, about:support), so the browser reports
+/// the version the package was installed as. Gecko's own version
+/// (version.txt, used for compatibility checks and the user agent) stays
+/// the Firefox version.
+fn install_version(version: &str, source: &Path) -> Result<()> {
+    write_file(
+        &source.join("browser/config/version_display.txt"),
+        format!("{version}\n"),
+    )
+}
+
+/// Copy Hallow's fonts next to Firefox's bundled emoji font; patches/0010
+/// lists them in browser/fonts/moz.build, which installs them into
+/// `<app>/fonts` on Linux and Windows.
+fn install_fonts(dir: &Path, source: &Path) -> Result<()> {
+    let dest = source.join("browser/fonts");
+    let mut count = 0;
+    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+        let path = entry?.path();
+        if path.extension().is_some_and(|e| e == "ttf") {
+            fs::copy(&path, dest.join(path.file_name().unwrap()))
+                .with_context(|| format!("copying {}", path.display()))?;
+            count += 1;
+        }
+    }
+    eprintln!("added {count} fonts to browser/fonts");
+    Ok(())
+}
+
+/// The updater (Windows) only applies MAR packages signed by a key whose
+/// certificate is built into it. `HALLOW_UPDATE_CERTS` names one or two DER
+/// certificates (comma-separated; development builds trust a throwaway key
+/// of their CI run besides the release key); otherwise Hallow's release
+/// certificate is used. Mozilla's certificates are always replaced, so a
+/// Hallow build never trusts Firefox updates. The Linux package does not
+/// ship the updater.
+fn install_update_certificates(ctx: &Context, source: &Path) -> Result<()> {
+    let mut certs: Vec<PathBuf> = match std::env::var("HALLOW_UPDATE_CERTS") {
+        Ok(list) if !list.trim().is_empty() => {
+            list.split(',').map(|p| PathBuf::from(p.trim())).collect()
+        }
+        _ => {
+            let release = ctx.root.join(UPDATE_CERTIFICATE);
+            if release.exists() {
+                vec![release]
+            } else {
+                vec![]
+            }
+        }
+    };
+    match (certs.len(), ctx.target) {
+        (0, Target::Windows) => bail!(
+            "no update signing certificate: commit {UPDATE_CERTIFICATE} \
+             (docs/RELEASING.md) or set HALLOW_UPDATE_CERTS"
+        ),
+        (0, Target::Linux) => {
+            eprintln!("no update signing certificate; the Linux package has no updater");
+            return Ok(());
+        }
+        (1 | 2, _) => {}
+        _ => bail!("HALLOW_UPDATE_CERTS takes one or two certificates"),
+    }
+    if certs.len() == 1 {
+        certs.push(certs[0].clone());
+    }
+    windows::install_update_certificates(source, &certs[0], &certs[1])
 }
 
 fn patch_files(dir: &Path) -> Result<Vec<PathBuf>> {
@@ -112,13 +237,17 @@ pub fn install_branding(root: &Path, source: &Path) -> Result<()> {
     copy_dir(&source.join("browser/branding/unofficial"), &dest)
         .context("copying browser/branding/unofficial")?;
     copy_dir(&branding.join("overlay"), &dest).context("copying branding/overlay")?;
+    // Windows-only files (installer defines, Start menu tiles); Linux builds
+    // carry them unused, like Mozilla's branding packages do.
+    copy_dir(&branding.join("windows"), &dest).context("copying branding/windows")?;
 
-    // Icons and about-dialog artwork, rendered from the master logo.
+    // App icons (Gecko installs default<N>.png as the window icons) and
+    // about-dialog artwork, rendered from the master logo.
     let logo = icons::load_logo(&branding)?;
     for size in icons::BRANDING_SIZES {
         write_file(
             &dest.join(format!("default{size}.png")),
-            icons::render_png(&logo, size, size)?,
+            icons::render_icon(&logo, size)?,
         )?;
     }
     let content = dest.join("content");
@@ -138,6 +267,7 @@ pub fn install_branding(root: &Path, source: &Path) -> Result<()> {
     for name in ["about-wordmark.svg", "firefox-wordmark.svg"] {
         fs::copy(branding.join("wordmark.svg"), content.join(name))?;
     }
+    windows::install_branding(&logo, &dest, source)?;
 
     // Stylesheets ship in the branding package: hallow.css is linked from
     // browser.xhtml (patches/0001), hallow-home.css from the new tab page
@@ -228,9 +358,19 @@ mod tests {
         let dest = tmp.join(BRANDING_DIR);
         let configure = fs::read_to_string(dest.join("configure.sh")).unwrap();
         assert!(configure.contains("MOZ_APP_DISPLAYNAME=Hallow"));
+        // Windows icons are rendered over the unofficial ones.
+        let ico = fs::read(dest.join("firefox.ico")).unwrap();
+        assert_eq!(&ico[0..4], &[0, 0, 1, 0]);
         assert!(
-            dest.join("firefox.ico").exists(),
-            "unofficial files are kept"
+            fs::read_to_string(dest.join("branding.nsi"))
+                .unwrap()
+                .contains("!define BrandFullName         \"Hallow\"")
+        );
+        assert!(dest.join("wizWatermark.bmp").exists());
+        assert!(dest.join("VisualElements_150.png").exists());
+        assert!(
+            tmp.join("toolkit/mozapps/installer/windows/nsis/setup.ico")
+                .exists()
         );
         assert!(dest.join("default256.png").exists());
         assert!(dest.join("content/about-logo@2x.png").exists());

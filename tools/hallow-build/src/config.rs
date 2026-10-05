@@ -85,6 +85,39 @@ pub fn validate_version(version: &str) -> Result<()> {
     Ok(())
 }
 
+/// A development suffix is empty or starts with `~` or `+` and uses only
+/// characters Debian versions allow.
+pub fn validate_version_suffix(suffix: &str) -> Result<()> {
+    let valid = suffix.is_empty()
+        || (matches!(suffix.as_bytes()[0], b'~' | b'+')
+            && suffix.len() > 1
+            && suffix
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"~+.".contains(&b)));
+    if !valid {
+        bail!("HALLOW_VERSION_SUFFIX `{suffix}` must look like `~dev42` or `+local`");
+    }
+    Ok(())
+}
+
+/// The platform a build is for, from `HALLOW_TARGET` (the mozconfig reads
+/// the same variable).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Target {
+    Linux,
+    Windows,
+}
+
+impl Target {
+    pub fn from_env() -> Result<Self> {
+        match std::env::var("HALLOW_TARGET").as_deref() {
+            Err(_) | Ok("") | Ok("linux") => Ok(Target::Linux),
+            Ok("windows") => Ok(Target::Windows),
+            Ok(other) => bail!("HALLOW_TARGET must be linux or windows, not `{other}`"),
+        }
+    }
+}
+
 /// Numeric key for comparing release versions (`157.0.1` > `157.0`).
 pub fn version_key(version: &str) -> Vec<u64> {
     version.split('.').map(|p| p.parse().unwrap_or(0)).collect()
@@ -94,6 +127,12 @@ pub struct Context {
     pub root: PathBuf,
     pub work: PathBuf,
     pub config: Config,
+    /// Appended to the package version of builds that are not releases,
+    /// from `HALLOW_VERSION_SUFFIX` (e.g. `~dev42`). A `~` suffix sorts
+    /// before the release it precedes, so a development build of 157.0-7
+    /// is replaced by the 157.0-7 release.
+    pub version_suffix: String,
+    pub target: Target,
 }
 
 impl Context {
@@ -107,7 +146,23 @@ impl Context {
             .with_context(|| format!("repository root {} not found", root.display()))?;
         let config = Config::load(&root)?;
         let work = work.unwrap_or_else(|| root.join("work"));
-        Ok(Self { root, work, config })
+        let version_suffix = std::env::var("HALLOW_VERSION_SUFFIX").unwrap_or_default();
+        validate_version_suffix(&version_suffix)?;
+        Ok(Self {
+            root,
+            work,
+            config,
+            version_suffix,
+            target: Target::from_env()?,
+        })
+    }
+
+    /// Version of this build: the package version from hallow.toml plus the
+    /// development suffix, if any. Shown in the About dialog and Settings and
+    /// used for the .deb, so the browser reports the version it was
+    /// installed as.
+    pub fn version(&self) -> String {
+        format!("{}{}", self.config.package_version(), self.version_suffix)
     }
 
     pub fn tarball_name(&self) -> String {
@@ -140,6 +195,18 @@ mod tests {
         assert!(version_key("157.0.1") > version_key("157.0"));
         assert!(version_key("158.0") > version_key("157.0.2"));
         assert!(version_key("100.0") > version_key("99.0.1"));
+    }
+
+    #[test]
+    fn version_suffixes() {
+        assert!(validate_version_suffix("").is_ok());
+        assert!(validate_version_suffix("~dev42").is_ok());
+        assert!(validate_version_suffix("~dev42.g1a2b3c4").is_ok());
+        assert!(validate_version_suffix("+local").is_ok());
+        assert!(validate_version_suffix("dev").is_err());
+        assert!(validate_version_suffix("~").is_err());
+        assert!(validate_version_suffix("~dev 1").is_err());
+        assert!(validate_version_suffix("~dev/1").is_err());
     }
 
     #[test]

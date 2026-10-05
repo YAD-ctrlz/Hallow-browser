@@ -1,0 +1,8 @@
+# Hallow's stable channel: only builds of the release branch, published by
+# the Hallow release workflow and signed with the Hallow archive key. Hallow
+# and the system's update manager install new Hallow versions from here.
+# Delete this file to stop receiving Hallow updates.
+Types: deb
+URIs: @URI@
+Suites: download/
+Signed-By: /usr/share/keyrings/hallow-archive-keyring.asc

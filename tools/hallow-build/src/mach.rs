@@ -119,3 +119,50 @@ pub fn profile(ctx: &Context, instrumented: &Path, out: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+/// Merge the raw profiles of a training run done on another machine (the
+/// Windows training run, tools/pgo_windows.py) into `<out>/merged.profdata`
+/// with this build's own llvm-profdata, for a HALLOW_PGO=use build.
+pub fn pgo_merge(ctx: &Context, raw: &Path, out: &Path) -> Result<()> {
+    let source = ctx.source_dir();
+    if !source.join("mozconfig").exists() {
+        bail!(
+            "{} is not prepared; run `cargo hb prepare` first",
+            source.display()
+        );
+    }
+    // Configure bootstraps the toolchains, including llvm-profdata. The
+    // profile does not exist yet, so configure without using it.
+    run(Command::new(source.join("mach"))
+        .arg("configure")
+        .current_dir(&source)
+        .env("MOZCONFIG", source.join("mozconfig"))
+        .env("MOZBUILD_SKIP_INTERACTIVE", "1")
+        .env_remove("HALLOW_PGO"))?;
+    let llvm_profdata = mozbuild_state_dir()?.join("clang/bin/llvm-profdata");
+    let mut profiles: Vec<PathBuf> = fs::read_dir(raw)
+        .with_context(|| format!("reading {}", raw.display()))?
+        .map(|e| e.map(|e| e.path()))
+        .collect::<std::io::Result<_>>()?;
+    profiles.retain(|p| p.extension().is_some_and(|e| e == "profraw"));
+    profiles.sort();
+    if profiles.is_empty() {
+        bail!("no .profraw files in {}", raw.display());
+    }
+    fs::create_dir_all(out)?;
+    let merged = out.join("merged.profdata");
+    run(Command::new(&llvm_profdata)
+        .args(["merge", "-o"])
+        .arg(&merged)
+        .args(&profiles))?;
+    let size = fs::metadata(&merged)?.len();
+    if size == 0 {
+        bail!("llvm-profdata wrote an empty profile");
+    }
+    eprintln!(
+        "merged {} raw profiles: {}",
+        profiles.len(),
+        crate::util::human_bytes(size)
+    );
+    Ok(())
+}

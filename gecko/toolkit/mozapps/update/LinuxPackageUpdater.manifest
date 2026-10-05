@@ -1,0 +1,1 @@
+category update-timer LinuxPackageUpdater @mozilla.org/updates/linux-package-update-timer;1,getService,linux-package-update-timer,app.update.interval,86400,86400

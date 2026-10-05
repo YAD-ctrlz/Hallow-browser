@@ -14,8 +14,6 @@ ac_add_options MOZ_APP_REMOTINGNAME=hallow
 # Fetch Mozilla's own clang, sysroot, cbindgen, nasm, node and wasi-sysroot,
 # the exact toolchains Firefox release builds use.
 ac_add_options --enable-bootstrap
-# Run against older system libstdc++ (Debian 11+, Ubuntu 22.04+).
-ac_add_options --enable-stdcxx-compat
 
 # --- Rust-first ------------------------------------------------------------
 # Explicit SIMD in Rust crates (encoding_rs and friends).
@@ -27,9 +25,9 @@ ac_add_options --enable-lto=cross
 # --- Speed: profile-guided optimization ------------------------------------
 # Release builds are compiled three times like Firefox's own: an instrumented
 # build, a training run of Mozilla's PGO corpus (Speedometer, layout and
-# style benchmarks), and the final build optimized with that profile across
-# C++ and Rust. The release workflow sets HALLOW_PGO for each stage; local
-# builds without it are plain LTO builds.
+# style benchmarks) on the target platform, and the final build optimized
+# with that profile across C++ and Rust. The release workflow sets
+# HALLOW_PGO for each stage; local builds without it are plain LTO builds.
 case "$HALLOW_PGO" in
 generate)
   ac_add_options --enable-profile-generate=cross
@@ -37,20 +35,64 @@ generate)
 use)
   ac_add_options --enable-profile-use=cross
   ac_add_options --with-pgo-profile-path="$HALLOW_PGO_DIR/merged.profdata"
-  ac_add_options --with-pgo-jarlog="$HALLOW_PGO_DIR/en-US.log"
+  # The omni.ja access order recorded during training, when the training
+  # run's paths match this build's (Linux).
+  if [ -s "$HALLOW_PGO_DIR/en-US.log" ]; then
+    ac_add_options --with-pgo-jarlog="$HALLOW_PGO_DIR/en-US.log"
+  fi
   ;;
 esac
 
-# --- Lightweight -----------------------------------------------------------
+# --- Release build ---------------------------------------------------------
+# Firefox's release configuration, spelled out: optimized C++ and Rust
+# (-C opt-level=2, Mozilla's release setting), no debug code or symbols,
+# release-engineering defaults (--enable-release).
+ac_add_options --enable-release
 ac_add_options --enable-optimize
+ac_add_options RUSTC_OPT_LEVEL=2
 ac_add_options --disable-debug
 ac_add_options --disable-debug-symbols
 ac_add_options --disable-tests
 ac_add_options --disable-crashreporter
-# Updates come from the .deb / GitHub releases, not an in-app updater.
-ac_add_options --disable-updater
 
-ac_add_options --enable-default-toolkit=cairo-gtk3-x11-wayland
+# --- Updates ---------------------------------------------------------------
+# Firefox's update framework provides the update UI (About dialog, Settings,
+# notifications) on every platform. How an update is installed is
+# platform-specific: Linux packages are updated through the system package
+# manager from Hallow's signed repository (LinuxPackageUpdater), so the .deb
+# does not ship Gecko's own updater binary; Windows uses Gecko's updater with
+# MAR packages signed by Hallow (see the Windows section below). MAR channel
+# IDs are Hallow's own, so Firefox update packages are never accepted.
+ac_add_options --enable-updater
+ac_add_options MAR_CHANNEL_ID=hallow-release
+ac_add_options ACCEPTED_MAR_CHANNEL_IDS=hallow-release
+
+# --- Platform --------------------------------------------------------------
+# HALLOW_TARGET picks the platform; everything above is shared.
+case "${HALLOW_TARGET:-linux}" in
+windows)
+  # Cross-compiled on Linux like Firefox's own Windows builds: clang-cl and
+  # lld-link from Mozilla's toolchains, the Windows SDK and MSVC headers and
+  # libraries fetched by bootstrap from Microsoft.
+  ac_add_options --target=x86_64-pc-windows-msvc
+  # Updates install with Gecko's updater from MAR packages signed with
+  # Hallow's key. Hallow installs per user, so the updater never needs
+  # administrator rights and Mozilla's maintenance service (a SYSTEM service
+  # that only trusts Mozilla-signed binaries) is not built.
+  ac_add_options --disable-maintenance-service
+  # Reports the default browser to Mozilla's telemetry.
+  ac_add_options --disable-default-browser-agent
+  ;;
+linux)
+  ac_add_options --enable-default-toolkit=cairo-gtk3-x11-wayland
+  # Run against older system libstdc++ (Debian 11+, Ubuntu 22.04+).
+  ac_add_options --enable-stdcxx-compat
+  ;;
+*)
+  echo "HALLOW_TARGET must be linux or windows, not $HALLOW_TARGET" >&2
+  exit 1
+  ;;
+esac
 
 mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-hallow
 

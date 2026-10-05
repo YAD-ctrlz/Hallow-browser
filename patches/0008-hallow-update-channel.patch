@@ -1,0 +1,53 @@
+Hallow's update channel instead of Mozilla's update server
+
+Hallow builds the update framework for its update UI, but must never ask
+Mozilla's update server (aus5.mozilla.org) for updates:
+
+- Windows builds check Hallow's stable channel, update-win64.xml on the
+  latest GitHub release, which only Hallow's release workflow publishes, from
+  the release branch. The MAR packages it lists must be signed with Hallow's
+  key and carry Hallow's MAR channel ID (see the mozconfig).
+- Linux packages have no [AppUpdate] URL: they update through the system
+  package manager (LinuxPackageUpdater, patches/0007).
+
+diff --git a/build/application.ini.in b/build/application.ini.in
+index 6df1323..4fa670d 100644
+--- a/build/application.ini.in
++++ b/build/application.ini.in
+@@ -51,6 +51,12 @@ ServerURL=@MOZ_CRASHREPORTER_URL@/submit?id=@MOZ_APP_ID@&version=@MOZ_APP_VERSIO
+ #endif
+ 
+ #if MOZ_UPDATER
++; Hallow never asks Mozilla's update server for updates. Windows builds check
++; Hallow's stable channel (MAR packages signed with Hallow's key, see
++; HALLOW_UPDATE_URL in build/moz.build); Linux packages have no [AppUpdate]
++; URL and update through the system package manager (LinuxPackageUpdater).
++#ifdef HALLOW_UPDATE_URL
+ [AppUpdate]
+-URL=https://@MOZ_APPUPDATE_HOST@/update/6/%PRODUCT%/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%SYSTEM_CAPABILITIES%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml
++URL=@HALLOW_UPDATE_URL@
++#endif
+ #endif
+diff --git a/build/moz.build b/build/moz.build
+index 0182121..b12777b 100644
+--- a/build/moz.build
++++ b/build/moz.build
+@@ -92,9 +92,15 @@ if CONFIG["MOZ_APP_BASENAME"]:
+         if CONFIG[var]:
+             appini_defines[var] = True
+ 
+-    appini_defines["MOZ_APPUPDATE_HOST"] = "aus5.mozilla.org"
+-    if CONFIG["MOZ_APPUPDATE_HOST"]:
+-        appini_defines["MOZ_APPUPDATE_HOST"] = CONFIG["MOZ_APPUPDATE_HOST"]
++    # Hallow: Windows builds update from Hallow's stable channel, published
++    # by Hallow's release workflow from its release branch only. The MAR
++    # packages it lists must be signed with Hallow's key (the updater's
++    # embedded certificates) and carry Hallow's MAR channel ID.
++    if CONFIG["OS_TARGET"] == "WINNT":
++        appini_defines["HALLOW_UPDATE_URL"] = (
++            "https://github.com/YAD-ctrlz/Hallow-browser"
++            "/releases/latest/download/update-win64.xml"
++        )
+ 
+     GeneratedFile(
+         "application.ini",

@@ -1,0 +1,36 @@
+Name the Start menu tile manifest after the executable
+
+Windows reads a program's tile manifest from <exe name>.VisualElementsManifest.xml
+next to it. Firefox's is firefox.VisualElementsManifest.xml, which hallow.exe
+would never use: name it after the app (hallow.VisualElementsManifest.xml,
+rendered from branding/windows).
+
+diff --git a/browser/branding/branding-common.mozbuild b/browser/branding/branding-common.mozbuild
+index dd02e32..d09c4fb 100644
+--- a/browser/branding/branding-common.mozbuild
++++ b/browser/branding/branding-common.mozbuild
+@@ -15,8 +15,10 @@ def FirefoxBranding():
+         ]
+ 
+     if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
++        # Hallow: Windows only reads the tile manifest named after the
++        # executable (hallow.exe).
+         FINAL_TARGET_FILES[".."] += [
+-            "firefox.VisualElementsManifest.xml",
++            "%s.VisualElementsManifest.xml" % CONFIG["MOZ_APP_NAME"],
+             "private_browsing.VisualElementsManifest.xml",
+         ]
+         FINAL_TARGET_FILES.VisualElements += [
+diff --git a/browser/installer/package-manifest.in b/browser/installer/package-manifest.in
+index 46725ca..8cd2801 100644
+--- a/browser/installer/package-manifest.in
++++ b/browser/installer/package-manifest.in
+@@ -150,7 +150,7 @@
+ ; [Base Browser Files]
+ #ifndef XP_UNIX
+ @BINPATH@/@MOZ_APP_NAME@.exe
+-@BINPATH@/firefox.VisualElementsManifest.xml
++@BINPATH@/@MOZ_APP_NAME@.VisualElementsManifest.xml
+ @BINPATH@/browser/VisualElements/VisualElements_150.png
+ @BINPATH@/browser/VisualElements/VisualElements_70.png
+ @BINPATH@/private_browsing.exe

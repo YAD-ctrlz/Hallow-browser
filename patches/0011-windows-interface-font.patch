@@ -1,0 +1,26 @@
+Use IBM Plex Sans for the interface on Windows
+
+The Windows counterpart of patches/0004: menus, tabs, toolbars and Settings
+use IBM Plex Sans at the size and weight Windows asks for. Form controls keep
+the native font so web pages render as in Firefox.
+
+diff --git a/widget/windows/nsLookAndFeel.cpp b/widget/windows/nsLookAndFeel.cpp
+index f63dd0f..8dd577a 100644
+--- a/widget/windows/nsLookAndFeel.cpp
++++ b/widget/windows/nsLookAndFeel.cpp
+@@ -862,6 +862,15 @@ LookAndFeelFont nsLookAndFeel::GetLookAndFeelFont(LookAndFeel::FontID anID) {
+ bool nsLookAndFeel::NativeGetFont(LookAndFeel::FontID anID, nsString& aFontName,
+                                   gfxFontStyle& aFontStyle) {
+   LookAndFeelFont font = GetLookAndFeelFont(anID);
++  // Hallow: the interface font is IBM Plex Sans (bundled in <app>/fonts), at
++  // the size and weight Windows asks for, as on Linux. Form-control fonts
++  // (fields, lists, buttons) stay native so web pages render as they do in
++  // Firefox. The ui.font.* prefs can still pick a different font.
++  if (font.haveFont() && anID != LookAndFeel::FontID::MozField &&
++      anID != LookAndFeel::FontID::MozList &&
++      anID != LookAndFeel::FontID::MozButton) {
++    font.name() = u"IBM Plex Sans"_ns;
++  }
+   return LookAndFeelFontToStyle(font, aFontName, aFontStyle);
+ }
+ 

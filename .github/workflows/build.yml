@@ -1,0 +1,157 @@
+name: Development build
+
+# Builds and tests Hallow for Linux and Windows from every branch except
+# release, and from pull requests. The packages it makes are CI artifacts for
+# testing only:
+#   - the workflow has a read-only token and never uses the `production`
+#     environment, which holds the update channel's signing keys, so it
+#     cannot publish a release or sign Hallow's stable update channel;
+#   - its versions carry a ~dev suffix (157.0-7~dev42), which sorts before
+#     the release they lead up to;
+#   - Windows builds sign their update package with a throwaway key made for
+#     the run and deleted with it; no release build trusts that key.
+# Installed Hallows only ever update from the stable channel, which only the
+# Release workflow publishes, from the release branch.
+# Changes to the tests alone are run by package-tests.yml against the newest
+# build instead of rebuilding.
+
+on:
+  push:
+    branches-ignore: [release]
+    paths:
+      - hallow.toml
+      - mozconfig
+      - gecko/**
+      - patches/**
+      - branding/**
+      - prefs/**
+      - ui/**
+      - packaging/**
+      - tools/hallow-build/**
+      - tools/make-apt-repo.sh
+      - tools/make-windows-update-tests.sh
+      - Cargo.lock
+      - .github/actions/**
+      - .github/workflows/build.yml
+      - .github/workflows/windows.yml
+  pull_request:
+    paths:
+      - hallow.toml
+      - mozconfig
+      - gecko/**
+      - patches/**
+      - branding/**
+      - prefs/**
+      - ui/**
+      - packaging/**
+      - tools/hallow-build/**
+      - tools/make-apt-repo.sh
+      - tools/make-windows-update-tests.sh
+      - Cargo.lock
+      - .github/actions/**
+      - .github/workflows/build.yml
+      - .github/workflows/windows.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # The Rust release Mozilla builds this Gecko with
+  # (taskcluster/kinds/toolchain/rust.yml in the Firefox source).
+  GECKO_RUST: "1.95.0"
+  HALLOW_SCCACHE: "1"
+  SCCACHE_CACHE_SIZE: 6G
+  HALLOW_VERSION_SUFFIX: "~dev${{ github.run_number }}"
+
+jobs:
+  build:
+    name: Build (LTO, no PGO)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/gecko-setup
+
+      - id: version
+        run: echo "version=$(cargo hb version)" >> "$GITHUB_OUTPUT"
+
+      - name: Check prefs against this Firefox
+        run: cargo hb lint-prefs --strict
+
+      - name: Restore compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-dev-${{ github.run_id }}
+          restore-keys: sccache-dev-
+
+      - name: Compile Gecko (mach build + package)
+        run: cargo hb build --bootstrap
+
+      - name: Save compiler cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-dev-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Build .deb
+        run: |
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          cargo hb deb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hallow-dev-deb
+          path: dist/*.deb
+          retention-days: 14
+          if-no-files-found: error
+
+  test:
+    name: Test the package
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: hallow-dev-deb
+          path: dist
+      - name: Install and test
+        run: bash tools/test-package.sh dist/hallow_*.deb results
+      - name: Print screenshots as base64
+        if: always()
+        run: tools/print-screenshots.sh results
+      - name: Summary
+        if: always()
+        run: cat results/summary.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: results/
+
+  windows:
+    name: Windows
+    uses: ./.github/workflows/windows.yml
+    with:
+      pgo: false
+
+  # The release pipeline's Windows PGO stages, on request: put [pgo] in the
+  # commit message.
+  windows-pgo:
+    name: Windows PGO
+    if: contains(github.event.head_commit.message, '[pgo]')
+    uses: ./.github/workflows/windows.yml
+    with:
+      pgo: true

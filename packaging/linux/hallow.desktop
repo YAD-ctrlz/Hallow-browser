@@ -11,7 +11,7 @@ Terminal=false
 StartupNotify=true
 StartupWMClass=hallow
 Categories=Network;WebBrowser;
-MimeType=text/html;text/xml;application/xhtml+xml;application/xml;application/rss+xml;application/rdf+xml;application/pdf;application/json;image/gif;image/jpeg;image/png;image/webp;image/avif;image/jxl;image/svg+xml;video/webm;audio/webm;audio/ogg;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/mailto;
+MimeType=text/html;text/xml;application/xhtml+xml;application/xml;application/rss+xml;application/rdf+xml;application/pdf;application/json;image/gif;image/jpeg;image/png;image/webp;image/avif;image/svg+xml;video/webm;audio/webm;audio/ogg;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/mailto;
 Actions=new-window;new-private-window;profile-manager-window;
 
 [Desktop Action new-window]

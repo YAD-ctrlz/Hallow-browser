@@ -12,11 +12,14 @@ browser=$1
 out=$2
 mkdir -p "$out"
 
-export DISPLAY=:99
-Xvfb :99 -screen 0 1280x800x24 -nolisten tcp &
-xvfb=$!
-trap 'kill "$xvfb" 2>/dev/null || true' EXIT
-sleep 2
+# Use the caller's display if there is one, else start Xvfb.
+if [ -z "${DISPLAY:-}" ]; then
+  export DISPLAY=:99
+  Xvfb :99 -screen 0 1280x800x24 -nolisten tcp &
+  xvfb=$!
+  trap 'kill "$xvfb" 2>/dev/null || true' EXIT
+  sleep 2
+fi
 
 shoot() {
   local name=$1 theme=$2 url=$3 profile pid

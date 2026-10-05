@@ -1,0 +1,256 @@
+Update Linux packages through the system package manager
+
+Firefox hides its update UI in packaged apps because Gecko's updater cannot
+write files a package manager owns. Hallow keeps the UI and backs it with
+LinuxPackageUpdater (gecko/toolkit/mozapps/update, added by cargo hb prepare):
+
+- AppUpdater runs the package check and install for Linux package installs,
+  using the same states, so the About dialog and Settings work unchanged.
+- The About dialog's and Settings' restart button also finishes a package
+  update.
+- Settings shows the update section for package installs, without the
+  install-mode choice and Gecko's update history.
+- The module and its daily update-timer entry are built on GTK only.
+
+diff --git a/browser/base/content/aboutDialog-appUpdater.js b/browser/base/content/aboutDialog-appUpdater.js
+index 879b827299..7b8378d353 100644
+--- a/browser/base/content/aboutDialog-appUpdater.js
++++ b/browser/base/content/aboutDialog-appUpdater.js
+@@ -275,7 +275,12 @@ appUpdater.prototype = {
+    * which is presented after the download has been downloaded.
+    */
+   buttonRestartAfterDownload() {
+-    if (AUS.currentState != Ci.nsIApplicationUpdateService.STATE_PENDING) {
++    // Hallow: a package update the system package manager installed is
++    // also finished by restarting (see AppUpdater.packageRestartPending).
++    if (
++      !this._appUpdater.packageRestartPending &&
++      AUS.currentState != Ci.nsIApplicationUpdateService.STATE_PENDING
++    ) {
+       return;
+     }
+ 
+diff --git a/browser/components/preferences/config/about-firefox.mjs b/browser/components/preferences/config/about-firefox.mjs
+index c28905c8da..b358ecec09 100644
+--- a/browser/components/preferences/config/about-firefox.mjs
++++ b/browser/components/preferences/config/about-firefox.mjs
+@@ -33,8 +33,24 @@ const UpdatesHelpers = {
+     // When we're running inside an app package, there's no point in
+     // displaying any update content here, and it would get confusing if we
+     // did, because our updater is not enabled.
++    // Hallow: unless the package is updated through Hallow's package channel.
+     return (
+-      AppConstants.MOZ_UPDATER && !Services.sysinfo.getProperty("isPackagedApp")
++      AppConstants.MOZ_UPDATER &&
++      (!Services.sysinfo.getProperty("isPackagedApp") ||
++        this.hasPackageUpdates)
++    );
++  },
++
++  // Hallow: Linux packages update through the system package manager
++  // (LinuxPackageUpdater): no install-mode choice (the system asks for a
++  // password each time) and no Gecko update history.
++  get hasPackageUpdates() {
++    return (
++      AppConstants.platform == "linux" &&
++      Services.sysinfo.getProperty("isPackagedApp") &&
++      ChromeUtils.importESModule(
++        "resource://gre/modules/LinuxPackageUpdater.sys.mjs"
++      ).LinuxPackageUpdater.available
+     );
+   },
+ 
+@@ -43,6 +59,7 @@ const UpdatesHelpers = {
+       Services.policies && !Services.policies.isAllowed("appUpdate");
+     return (
+       this.showUpdatesSettings &&
++      !this.hasPackageUpdates &&
+       !(
+         updateDisabled ||
+         UpdateUtils.appUpdateAutoSettingIsLocked() ||
+@@ -269,6 +286,7 @@ Preferences.addSetting({
+ });
+ Preferences.addSetting({
+   id: "showUpdateHistory",
++  visible: () => !UpdatesHelpers.hasPackageUpdates,
+   deps: ["disableShowUpdateHistory"],
+   disabled: deps => deps.disableShowUpdateHistory.locked,
+   onUserClick: () => UpdatesHelpers.showUpdates(),
+diff --git a/toolkit/mozapps/update/AppUpdater.sys.mjs b/toolkit/mozapps/update/AppUpdater.sys.mjs
+index 193ff85330..bd4dd3a250 100644
+--- a/toolkit/mozapps/update/AppUpdater.sys.mjs
++++ b/toolkit/mozapps/update/AppUpdater.sys.mjs
+@@ -7,6 +7,8 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+ 
+ const lazy = {};
+ ChromeUtils.defineESModuleGetters(lazy, {
++  // Only on Linux (GTK) builds; see #packageUpdater.
++  LinuxPackageUpdater: "resource://gre/modules/LinuxPackageUpdater.sys.mjs",
+   UpdateLog: "resource://gre/modules/UpdateLog.sys.mjs",
+   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
+ });
+@@ -111,6 +113,9 @@ export class AppUpdater {
+   // tell if its connected because we might be in the middle of an update swap
+   // in which case the status will have temporarily changed.
+   #swapListenerConnected = false;
++  // Set once a package update is installed (or found installed): restarting
++  // switches to it. See #checkPackageUpdate.
++  #packageRestartPending = false;
+ 
+   constructor() {
+     try {
+@@ -250,6 +255,12 @@ export class AppUpdater {
+         this.#swapListenerConnected = false;
+       }
+ 
++      const packageUpdater = this.#packageUpdater;
++      if (packageUpdater) {
++        await this.#checkPackageUpdate(packageUpdater);
++        return;
++      }
++
+       if (!AppConstants.MOZ_UPDATER || this.#updateDisabledByPackage) {
+         LOG(
+           "AppUpdater:check -" +
+@@ -424,6 +435,100 @@ export class AppUpdater {
+     return Services.sysinfo.getProperty("isPackagedApp");
+   }
+ 
++  /**
++   * Hallow: Linux package installations, where Gecko's updater cannot
++   * apply updates, are updated through the system package manager from
++   * Hallow's signed stable channel instead (LinuxPackageUpdater). Null
++   * everywhere else.
++   */
++  get #packageUpdater() {
++    if (AppConstants.platform != "linux" || !this.#updateDisabledByPackage) {
++      return null;
++    }
++    const updater = lazy.LinuxPackageUpdater;
++    return updater.available ? updater : null;
++  }
++
++  /**
++   * Whether restarting switches to an update the package manager installed.
++   */
++  get packageRestartPending() {
++    return this.#packageRestartPending;
++  }
++
++  /**
++   * `check()` for package installations: the same states as Gecko's
++   * updater, so the About dialog and Settings show it the same way. The
++   * update is installed once the user agrees (allowUpdateDownload), and the
++   * system asks for an administrator password.
++   */
++  async #checkPackageUpdate(updater) {
++    if (Services.policies && !Services.policies.isAllowed("appUpdate")) {
++      this.#setStatus(AppUpdater.STATUS.UPDATE_DISABLED_BY_POLICY);
++      return;
++    }
++    this.#setStatus(AppUpdater.STATUS.CHECKING);
++    let result;
++    try {
++      result = await makeAbortable(updater.check());
++    } catch (e) {
++      if (e instanceof AbortError) {
++        throw e;
++      }
++      console.error(e);
++      this.#setStatus(AppUpdater.STATUS.CHECKING_FAILED);
++      return;
++    }
++    LOG(`AppUpdater:#checkPackageUpdate - ${result.status} ${result.version}`);
++    if (result.status == "up-to-date") {
++      this.#setStatus(AppUpdater.STATUS.NO_UPDATES_FOUND);
++      return;
++    }
++    // Not an nsIUpdate: the UI only reads the version from it.
++    this.#_update = {
++      displayVersion: result.version,
++      appVersion: result.version,
++      buildID: "",
++    };
++    if (result.status == "restart") {
++      this.#packageRestartPending = true;
++      this.#setStatus(AppUpdater.STATUS.READY_FOR_RESTART);
++      return;
++    }
++    for (;;) {
++      const permission = new Promise(resolve => {
++        this.#permissionToDownloadGivenFn = resolve;
++      });
++      this.#setStatus(AppUpdater.STATUS.DOWNLOAD_AND_INSTALL);
++      await makeAbortable(permission);
++      this.#permissionToDownloadGivenFn = null;
++      this.#setStatus(AppUpdater.STATUS.STAGING);
++      let outcome;
++      try {
++        outcome = await makeAbortable(updater.install());
++      } catch (e) {
++        if (e instanceof AbortError) {
++          throw e;
++        }
++        console.error(e);
++        this.#setStatus(AppUpdater.STATUS.DOWNLOAD_FAILED);
++        return;
++      }
++      LOG(`AppUpdater:#checkPackageUpdate - install: ${outcome}`);
++      if (outcome == "installed") {
++        this.#packageRestartPending = true;
++        this.#setStatus(AppUpdater.STATUS.READY_FOR_RESTART);
++        return;
++      }
++      if (outcome == "up-to-date") {
++        this.#_update = null;
++        this.#setStatus(AppUpdater.STATUS.NO_UPDATES_FOUND);
++        return;
++      }
++      // "cancelled": the password prompt was dismissed; offer it again.
++    }
++  }
++
+   /**
+    * Downloads an update mar or connects to an in-progress download.
+    * Doesn't resolve until the update is ready to install, or a failure state
+diff --git a/toolkit/mozapps/update/components.conf b/toolkit/mozapps/update/components.conf
+index 32f7504300..9519b84167 100644
+--- a/toolkit/mozapps/update/components.conf
++++ b/toolkit/mozapps/update/components.conf
+@@ -34,3 +34,16 @@ Classes = [
+         'singleton': True,
+     },
+ ]
++
++# Hallow: daily check of Hallow's package channel on Linux; see
++# LinuxPackageUpdater.manifest for its update-timer registration.
++if buildconfig.substs["MOZ_WIDGET_TOOLKIT"] == "gtk":
++    Classes += [
++        {
++            'cid': '{9b0c5a8e-6f7d-4c3e-9d2a-5e1f4b8c7a61}',
++            'contract_ids': ['@mozilla.org/updates/linux-package-update-timer;1'],
++            'esModule': 'resource://gre/modules/LinuxPackageUpdater.sys.mjs',
++            'constructor': 'LinuxPackageUpdateTimer',
++            'singleton': True,
++        },
++    ]
+diff --git a/toolkit/mozapps/update/moz.build b/toolkit/mozapps/update/moz.build
+index a264cbb26b..dd1ed222a0 100644
+--- a/toolkit/mozapps/update/moz.build
++++ b/toolkit/mozapps/update/moz.build
+@@ -46,6 +46,15 @@ if (
+         "BackgroundTask_backgroundupdate.sys.mjs",
+     ]
+ 
++# Hallow: Linux packages update through the system package manager.
++if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
++    EXTRA_JS_MODULES += [
++        "LinuxPackageUpdater.sys.mjs",
++    ]
++    EXTRA_COMPONENTS += [
++        "LinuxPackageUpdater.manifest",
++    ]
++
+ XPCOM_MANIFESTS += [
+     "components.conf",
+ ]
