@@ -100,6 +100,20 @@ new revision.
 
 ## One-time setup
 
+The quick way: on your own computer, logged in to GitHub with `gh` as the
+repository owner (`sudo apt install gh gnupg openssl`, then `gh auth login`),
+run
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/YAD-ctrlz/Hallow-browser/development/tools/setup-release-keys.sh | bash
+```
+
+It does steps 1 to 3 below: creates both signing keys, stores the private
+keys as secrets of the `production` environment (usable only from the
+`release` branch), commits the public keys to `development`, and leaves a
+backup of the private keys in `~/hallow-release-keys-<date>` for you to move
+somewhere offline. It refuses to run once the keys exist. The steps by hand:
+
 ### 1. The archive signing key
 
 Create the key on a trusted machine (any Linux with `gpg`):
