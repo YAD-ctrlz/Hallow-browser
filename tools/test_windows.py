@@ -711,8 +711,12 @@ def main():
     args = parser.parse_args()
     dist, out = args.dist.resolve(), args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
+    stages = [s.strip() for s in args.stages.split(",") if s.strip()]
+    unknown = [s for s in stages if s not in STAGES]
+    if unknown:
+        parser.error(f"unknown stage(s) {unknown}; stages are {','.join(STAGES)}")
     r = Results(out)
-    for name in args.stages.split(","):
+    for name in stages:
         r.stage(name)
         try:
             fn = STAGES[name]
