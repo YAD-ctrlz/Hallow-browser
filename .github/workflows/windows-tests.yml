@@ -70,6 +70,16 @@ jobs:
         shell: pwsh
         run: tools/test-windows.ps1 -Dist dist -Results results
 
+      - name: The release's update check, as release.yml runs it
+        # As in windows.yml: install, then update to the build's own signed
+        # package, the release workflow's last check before going live.
+        if: ${{ !cancelled() && steps.build.outputs.run != '' }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/signed | Out-Null
+          Copy-Item dist/hallow-*-win64.complete.mar dist/signed/
+          tools/test-windows.ps1 -Dist dist -Results results/release-check -Stages install,updates
+
       - uses: actions/upload-artifact@v4
         if: always() && steps.build.outputs.run != ''
         with:
