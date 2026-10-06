@@ -337,6 +337,9 @@ def main():
             failures.append(name)
 
     marker = install / "update-test-marker.txt"
+    # Left by an update test package installed earlier on this machine
+    # (the uninstaller only removes the files Hallow ships).
+    marker.unlink(missing_ok=True)
     browser = Browser(exe, profile)
     try:
         # --- Updates while Hallow is closed -------------------------------------

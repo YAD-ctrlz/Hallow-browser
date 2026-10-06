@@ -11,7 +11,9 @@
 param(
   [string]$Dist = "dist",
   [string]$Results = "results",
-  [string]$Stages = ""
+  # A list: PowerShell passes `-Stages install,updates` as two values (as a
+  # plain string they would arrive as "install updates").
+  [string[]]$Stages = @()
 )
 $ErrorActionPreference = "Continue"
 New-Item -ItemType Directory -Force $Results | Out-Null
@@ -24,7 +26,7 @@ if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
 }
 
 $arguments = @("tools/test_windows.py", "--dist", $Dist, "--out", $Results)
-if ($Stages) { $arguments += @("--stages", $Stages) }
+if ($Stages) { $arguments += @("--stages", ($Stages -join ",")) }
 python @arguments
 $status = $LASTEXITCODE
 

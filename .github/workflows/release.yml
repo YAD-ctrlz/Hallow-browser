@@ -112,7 +112,10 @@ jobs:
               exit 1
             fi
           fi
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && [ "$FORCE" != true ]; then
+          # Only a published release counts: a draft is an attempt that never
+          # went live, which this run completes (publish takes it over).
+          published=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft -q '.isDraft | not' 2>/dev/null || true)
+          if [ "$published" = true ] && [ "$FORCE" != true ]; then
             build=false
             echo "::notice::Release $tag already exists. Increase [hallow].revision in hallow.toml to publish a new build."
           fi
@@ -463,9 +466,12 @@ jobs:
                   channel/Release.gpg channel/Packages channel/Packages.xz
                   channel/"$setup" channel/"$winzip" channel/"$mar" channel/update-win64.xml)
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            # A forced rebuild of an existing release.
+            # The draft of an earlier attempt that never went live, or a
+            # forced rebuild: replace its files and build it from this commit
+            # (a draft's tag is only created when it goes live).
             gh release upload "$TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit "$TAG" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --notes-file notes.md --title "Hallow $VERSION" \
+              --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY"
           else
             # Everything goes into a draft first, so the moment the release
             # becomes "latest" (and thus the stable channel) it is complete
